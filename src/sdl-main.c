@@ -1,3 +1,11 @@
+#include "disk.h"
+#include "emu/riscv.h"
+#include "pclink.h"
+#include "raw-serial.h"
+#include "risc-io.h"
+#include "risc.h"
+#include "sdl-clipboard.h"
+#include "sdl-ps2.h"
 #include <SDL.h>
 #include <getopt.h>
 #include <math.h>
@@ -7,31 +15,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "risc.h"
-#include "risc-io.h"
-#include "disk.h"
-#include "pclink.h"
-#include "raw-serial.h"
-#include "sdl-ps2.h"
-#include "sdl-clipboard.h"
 
 #define CPU_HZ 25000000
 #define FPS 60
 
 static uint32_t BLACK = 0x657b83, WHITE = 0xfdf6e3;
-//static uint32_t BLACK = 0x000000, WHITE = 0xFFFFFF;
-//static uint32_t BLACK = 0x0000FF, WHITE = 0xFFFF00;
-//static uint32_t BLACK = 0x000000, WHITE = 0x00FF00;
+// static uint32_t BLACK = 0x000000, WHITE = 0xFFFFFF;
+// static uint32_t BLACK = 0x0000FF, WHITE = 0xFFFF00;
+// static uint32_t BLACK = 0x000000, WHITE = 0x00FF00;
 
 #define MAX_HEIGHT 2048
-#define MAX_WIDTH  2048
+#define MAX_WIDTH 2048
 
 static int best_display(const SDL_Rect *rect);
 static int clamp(int x, int min, int max);
 static enum Action map_keyboard_event(SDL_KeyboardEvent *event);
 static void show_leds(const struct RISC_LED *leds, uint32_t value);
-static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect, SDL_Rect *display_rect);
-static void update_texture(struct RISC *risc, SDL_Texture *texture, const SDL_Rect *risc_rect);
+static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect,
+                            SDL_Rect *display_rect);
+static void update_texture(struct RISC *risc, SDL_Texture *texture,
+                           const SDL_Rect *risc_rect);
 
 enum Action {
   ACTION_OBERON_INPUT,
@@ -51,27 +54,27 @@ struct KeyMapping {
 };
 
 struct KeyMapping key_map[] = {
-  { SDL_PRESSED,  SDLK_F4,     KMOD_ALT, 0,           ACTION_QUIT },
-  { SDL_PRESSED,  SDLK_F12,    0, 0,                  ACTION_RESET },
-  { SDL_PRESSED,  SDLK_DELETE, KMOD_CTRL, KMOD_SHIFT, ACTION_RESET },
-  { SDL_PRESSED,  SDLK_F11,    0, 0,                  ACTION_TOGGLE_FULLSCREEN },
-  { SDL_PRESSED,  SDLK_RETURN, KMOD_ALT, 0,           ACTION_TOGGLE_FULLSCREEN },
-  { SDL_PRESSED,  SDLK_f,      KMOD_GUI, KMOD_SHIFT,  ACTION_TOGGLE_FULLSCREEN },  // Mac?
-  { SDL_PRESSED,  SDLK_LALT,   0, 0,                  ACTION_FAKE_MOUSE2 },
-  { SDL_RELEASED, SDLK_LALT,   0, 0,                  ACTION_FAKE_MOUSE2 },
+    {SDL_PRESSED, SDLK_F4, KMOD_ALT, 0, ACTION_QUIT},
+    {SDL_PRESSED, SDLK_F12, 0, 0, ACTION_RESET},
+    {SDL_PRESSED, SDLK_DELETE, KMOD_CTRL, KMOD_SHIFT, ACTION_RESET},
+    {SDL_PRESSED, SDLK_F11, 0, 0, ACTION_TOGGLE_FULLSCREEN},
+    {SDL_PRESSED, SDLK_RETURN, KMOD_ALT, 0, ACTION_TOGGLE_FULLSCREEN},
+    {SDL_PRESSED, SDLK_f, KMOD_GUI, KMOD_SHIFT,
+     ACTION_TOGGLE_FULLSCREEN}, // Mac?
+    {SDL_PRESSED, SDLK_LALT, 0, 0, ACTION_FAKE_MOUSE2},
+    {SDL_RELEASED, SDLK_LALT, 0, 0, ACTION_FAKE_MOUSE2},
 };
 
 static struct option long_options[] = {
-  { "zoom",             required_argument, NULL, 'z' },
-  { "fullscreen",       no_argument,       NULL, 'f' },
-  { "leds",             no_argument,       NULL, 'L' },
-  { "mem",              required_argument, NULL, 'm' },
-  { "size",             required_argument, NULL, 's' },
-  { "serial-in",        required_argument, NULL, 'I' },
-  { "serial-out",       required_argument, NULL, 'O' },
-  { "boot-from-serial", no_argument,       NULL, 'S' },
-  { NULL,               no_argument,       NULL, 0   }
-};
+    {"zoom", required_argument, NULL, 'z'},
+    {"fullscreen", no_argument, NULL, 'f'},
+    {"leds", no_argument, NULL, 'L'},
+    {"mem", required_argument, NULL, 'm'},
+    {"size", required_argument, NULL, 's'},
+    {"serial-in", required_argument, NULL, 'I'},
+    {"serial-out", required_argument, NULL, 'O'},
+    {"boot-from-serial", no_argument, NULL, 'S'},
+    {NULL, no_argument, NULL, 0}};
 
 static void fail(int code, const char *fmt, ...) {
   va_list ap;
@@ -91,28 +94,24 @@ static void usage() {
        "  --leds                Log LED state on stdout\n"
        "  --mem MEGS            Set memory size\n"
        "  --size WIDTHxHEIGHT   Set framebuffer size\n"
-       "  --boot-from-serial    Boot from serial line (disk image not required)\n"
+       "  --boot-from-serial    Boot from serial line (disk image not "
+       "required)\n"
        "  --serial-in FILE      Read serial input from FILE\n"
-       "  --serial-out FILE     Write serial output to FILE\n"
-       );
+       "  --serial-out FILE     Write serial output to FILE\n");
   exit(1);
 }
 
-int main (int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
   struct RISC *risc = risc_new();
   risc_set_serial(risc, &pclink);
   risc_set_clipboard(risc, &sdl_clipboard);
 
-  struct RISC_LED leds = {
-    .write = show_leds
-  };
+  struct RISC_LED leds = {.write = show_leds};
 
   bool fullscreen = false;
   double zoom = 0;
-  SDL_Rect risc_rect = {
-    .w = RISC_FRAMEBUFFER_WIDTH,
-    .h = RISC_FRAMEBUFFER_HEIGHT
-  };
+  SDL_Rect risc_rect = {.w = RISC_FRAMEBUFFER_WIDTH,
+                        .h = RISC_FRAMEBUFFER_HEIGHT};
   bool size_option = false;
   int mem_option = 0;
   const char *serial_in = NULL;
@@ -120,55 +119,60 @@ int main (int argc, char *argv[]) {
   bool boot_from_serial = false;
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "z:fLm:s:I:O:S", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "z:feLm:s:I:O:S", long_options,
+                            NULL)) != -1) {
     switch (opt) {
-      case 'z': {
-        double x = strtod(optarg, 0);
-        if (x > 0) {
-          zoom = x;
-        }
-        break;
+    case 'z': {
+      double x = strtod(optarg, 0);
+      if (x > 0) {
+        zoom = x;
       }
-      case 'f': {
-        fullscreen = true;
-        break;
-      }
-      case 'L': {
-        risc_set_leds(risc, &leds);
-        break;
-      }
-      case 'm': {
-        if (sscanf(optarg, "%d", &mem_option) != 1) {
-          usage();
-        }
-        break;
-      }
-      case 's': {
-        int w, h;
-        if (sscanf(optarg, "%dx%d", &w, &h) != 2) {
-          usage();
-        }
-        risc_rect.w = clamp(w, 32, MAX_WIDTH) & ~31;
-        risc_rect.h = clamp(h, 32, MAX_HEIGHT);
-        size_option = true;
-        break;
-      }
-      case 'I': {
-        serial_in = optarg;
-        break;
-      }
-      case 'O': {
-        serial_out = optarg;
-        break;
-      }
-      case 'S': {
-        boot_from_serial = true;
-        risc_set_switches(risc, 1);
-        break;
-      }
-      default: {
+      break;
+    }
+    case 'f': {
+      fullscreen = true;
+      break;
+    }
+    case 'L': {
+      risc_set_leds(risc, &leds);
+      break;
+    }
+    case 'm': {
+      if (sscanf(optarg, "%d", &mem_option) != 1) {
         usage();
       }
+      break;
+    }
+    case 's': {
+      int w, h;
+      if (sscanf(optarg, "%dx%d", &w, &h) != 2) {
+        usage();
+      }
+      risc_rect.w = clamp(w, 32, MAX_WIDTH) & ~31;
+      risc_rect.h = clamp(h, 32, MAX_HEIGHT);
+      size_option = true;
+      break;
+    }
+    case 'I': {
+      serial_in = optarg;
+      break;
+    }
+    case 'O': {
+      serial_out = optarg;
+      break;
+    }
+    case 'S': {
+      boot_from_serial = true;
+      risc_set_switches(risc, 1);
+      break;
+    }
+    case 'e': {
+      riscv_execute();
+      break;
+    }
+    default: {
+      usage();
+    }
     }
   }
 
@@ -218,12 +222,10 @@ int main (int argc, char *argv[]) {
       zoom = 1;
     }
   }
-  SDL_Window *window = SDL_CreateWindow("Project Oberon",
-                                        SDL_WINDOWPOS_UNDEFINED_DISPLAY(display),
-                                        SDL_WINDOWPOS_UNDEFINED_DISPLAY(display),
-                                        (int)(risc_rect.w * zoom),
-                                        (int)(risc_rect.h * zoom),
-                                        window_flags);
+  SDL_Window *window = SDL_CreateWindow(
+      "Project Oberon", SDL_WINDOWPOS_UNDEFINED_DISPLAY(display),
+      SDL_WINDOWPOS_UNDEFINED_DISPLAY(display), (int)(risc_rect.w * zoom),
+      (int)(risc_rect.h * zoom), window_flags);
   if (window == NULL) {
     fail(1, "Could not create window: %s", SDL_GetError());
   }
@@ -233,11 +235,9 @@ int main (int argc, char *argv[]) {
     fail(1, "Could not create renderer: %s", SDL_GetError());
   }
 
-  SDL_Texture *texture = SDL_CreateTexture(renderer,
-                                           SDL_PIXELFORMAT_ARGB8888,
-                                           SDL_TEXTUREACCESS_STREAMING,
-                                           risc_rect.w,
-                                           risc_rect.h);
+  SDL_Texture *texture =
+      SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                        SDL_TEXTUREACCESS_STREAMING, risc_rect.w, risc_rect.h);
   if (texture == NULL) {
     fail(1, "Could not create texture: %s", SDL_GetError());
   }
@@ -258,80 +258,82 @@ int main (int argc, char *argv[]) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       switch (event.type) {
-        case SDL_QUIT: {
-          done = true;
+      case SDL_QUIT: {
+        done = true;
+        break;
+      }
+
+      case SDL_WINDOWEVENT: {
+        if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+          display_scale = scale_display(window, &risc_rect, &display_rect);
+        }
+        break;
+      }
+
+      case SDL_MOUSEMOTION: {
+        int scaled_x =
+            (int)round((event.motion.x - display_rect.x) / display_scale);
+        int scaled_y =
+            (int)round((event.motion.y - display_rect.y) / display_scale);
+        int x = clamp(scaled_x, 0, risc_rect.w - 1);
+        int y = clamp(scaled_y, 0, risc_rect.h - 1);
+        bool mouse_is_offscreen = x != scaled_x || y != scaled_y;
+        if (mouse_is_offscreen != mouse_was_offscreen) {
+          SDL_ShowCursor(mouse_is_offscreen);
+          mouse_was_offscreen = mouse_is_offscreen;
+        }
+        risc_mouse_moved(risc, x, risc_rect.h - y - 1);
+        break;
+      }
+
+      case SDL_MOUSEBUTTONDOWN:
+      case SDL_MOUSEBUTTONUP: {
+        bool down = event.button.state == SDL_PRESSED;
+        risc_mouse_button(risc, event.button.button, down);
+        break;
+      }
+
+      case SDL_KEYDOWN:
+      case SDL_KEYUP: {
+        bool down = event.key.state == SDL_PRESSED;
+        switch (map_keyboard_event(&event.key)) {
+        case ACTION_RESET: {
+          risc_reset(risc);
           break;
         }
-
-        case SDL_WINDOWEVENT: {
-          if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-            display_scale = scale_display(window, &risc_rect, &display_rect);
+        case ACTION_TOGGLE_FULLSCREEN: {
+          fullscreen ^= true;
+          if (fullscreen) {
+            SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+          } else {
+            SDL_SetWindowFullscreen(window, 0);
           }
           break;
         }
-
-        case SDL_MOUSEMOTION: {
-          int scaled_x = (int)round((event.motion.x - display_rect.x) / display_scale);
-          int scaled_y = (int)round((event.motion.y - display_rect.y) / display_scale);
-          int x = clamp(scaled_x, 0, risc_rect.w - 1);
-          int y = clamp(scaled_y, 0, risc_rect.h - 1);
-          bool mouse_is_offscreen = x != scaled_x || y != scaled_y;
-          if (mouse_is_offscreen != mouse_was_offscreen) {
-            SDL_ShowCursor(mouse_is_offscreen);
-            mouse_was_offscreen = mouse_is_offscreen;
-          }
-          risc_mouse_moved(risc, x, risc_rect.h - y - 1);
+        case ACTION_QUIT: {
+          SDL_PushEvent(&(SDL_Event){.type = SDL_QUIT});
           break;
         }
-
-        case SDL_MOUSEBUTTONDOWN:
-        case SDL_MOUSEBUTTONUP: {
-          bool down = event.button.state == SDL_PRESSED;
-          risc_mouse_button(risc, event.button.button, down);
+        case ACTION_FAKE_MOUSE1: {
+          risc_mouse_button(risc, 1, down);
           break;
         }
-
-        case SDL_KEYDOWN:
-        case SDL_KEYUP: {
-          bool down = event.key.state == SDL_PRESSED;
-          switch (map_keyboard_event(&event.key)) {
-            case ACTION_RESET: {
-              risc_reset(risc);
-              break;
-            }
-            case ACTION_TOGGLE_FULLSCREEN: {
-              fullscreen ^= true;
-              if (fullscreen) {
-                SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-              } else {
-                SDL_SetWindowFullscreen(window, 0);
-              }
-              break;
-            }
-            case ACTION_QUIT: {
-              SDL_PushEvent(&(SDL_Event){ .type=SDL_QUIT });
-              break;
-            }
-            case ACTION_FAKE_MOUSE1: {
-              risc_mouse_button(risc, 1, down);
-              break;
-            }
-            case ACTION_FAKE_MOUSE2: {
-              risc_mouse_button(risc, 2, down);
-              break;
-            }
-            case ACTION_FAKE_MOUSE3: {
-              risc_mouse_button(risc, 3, down);
-              break;
-            }
-            case ACTION_OBERON_INPUT: {
-              uint8_t ps2_bytes[MAX_PS2_CODE_LEN];
-              int len = ps2_encode(event.key.keysym.scancode, down, ps2_bytes);
-              risc_keyboard_input(risc, ps2_bytes, len);
-              break;
-            }
-          }
+        case ACTION_FAKE_MOUSE2: {
+          risc_mouse_button(risc, 2, down);
+          break;
         }
+        case ACTION_FAKE_MOUSE3: {
+          risc_mouse_button(risc, 3, down);
+          break;
+        }
+        case ACTION_OBERON_INPUT: {
+          uint8_t ps2_bytes[MAX_PS2_CODE_LEN];
+          int len = ps2_encode(event.key.keysym.scancode, down, ps2_bytes);
+          risc_keyboard_input(risc, ps2_bytes, len);
+          break;
+        }
+        }
+      }
       }
     }
 
@@ -344,7 +346,7 @@ int main (int argc, char *argv[]) {
     SDL_RenderPresent(renderer);
 
     uint32_t frame_end = SDL_GetTicks();
-    int delay = frame_start + 1000/FPS - frame_end;
+    int delay = frame_start + 1000 / FPS - frame_end;
     if (delay > 0) {
       SDL_Delay(delay);
     }
@@ -352,17 +354,16 @@ int main (int argc, char *argv[]) {
   return 0;
 }
 
-
 static int best_display(const SDL_Rect *rect) {
   int best = 0;
   int display_cnt = SDL_GetNumVideoDisplays();
   for (int i = 0; i < display_cnt; i++) {
     SDL_Rect bounds;
-    if (SDL_GetDisplayBounds(i, &bounds) == 0 &&
-        bounds.h == rect->h && bounds.w >= rect->w) {
+    if (SDL_GetDisplayBounds(i, &bounds) == 0 && bounds.h == rect->h &&
+        bounds.w >= rect->w) {
       best = i;
       if (bounds.w == rect->w) {
-        break;  // exact match
+        break; // exact match
       }
     }
   }
@@ -370,8 +371,10 @@ static int best_display(const SDL_Rect *rect) {
 }
 
 static int clamp(int x, int min, int max) {
-  if (x < min) return min;
-  if (x > max) return max;
+  if (x < min)
+    return min;
+  if (x > max)
+    return max;
   return x;
 }
 
@@ -399,7 +402,8 @@ static void show_leds(const struct RISC_LED *leds, uint32_t value) {
   printf("\n");
 }
 
-static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect, SDL_Rect *display_rect) {
+static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect,
+                            SDL_Rect *display_rect) {
   int win_w, win_h;
   SDL_GetWindowSize(window, &win_w, &win_h);
   double oberon_aspect = (double)risc_rect->w / risc_rect->h;
@@ -414,11 +418,8 @@ static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect, SDL_R
 
   int w = (int)ceil(risc_rect->w * scale);
   int h = (int)ceil(risc_rect->h * scale);
-  *display_rect = (SDL_Rect){
-    .w = w, .h = h,
-    .x = (win_w - w) / 2,
-    .y = (win_h - h) / 2
-  };
+  *display_rect =
+      (SDL_Rect){.w = w, .h = h, .x = (win_w - w) / 2, .y = (win_h - h) / 2};
   return scale;
 }
 
@@ -426,7 +427,8 @@ static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect, SDL_R
 // allocate three megabyte on the stack.
 static uint32_t pixel_buf[MAX_WIDTH * MAX_HEIGHT];
 
-static void update_texture(struct RISC *risc, SDL_Texture *texture, const SDL_Rect *risc_rect) {
+static void update_texture(struct RISC *risc, SDL_Texture *texture,
+                           const SDL_Rect *risc_rect) {
   struct Damage damage = risc_get_framebuffer_damage(risc);
   if (damage.y1 <= damage.y2) {
     uint32_t *in = risc_get_framebuffer_ptr(risc);
@@ -444,12 +446,10 @@ static void update_texture(struct RISC *risc, SDL_Texture *texture, const SDL_Re
       }
     }
 
-    SDL_Rect rect = {
-      .x = damage.x1 * 32,
-      .y = risc_rect->h - damage.y2 - 1,
-      .w = (damage.x2 - damage.x1 + 1) * 32,
-      .h = (damage.y2 - damage.y1 + 1)
-    };
+    SDL_Rect rect = {.x = damage.x1 * 32,
+                     .y = risc_rect->h - damage.y2 - 1,
+                     .w = (damage.x2 - damage.x1 + 1) * 32,
+                     .h = (damage.y2 - damage.y1 + 1)};
     SDL_UpdateTexture(texture, &rect, pixel_buf, rect.w * 4);
   }
 }

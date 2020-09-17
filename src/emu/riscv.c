@@ -2,20 +2,15 @@
 #include "utils.h"
 
 #include <stdbool.h>
+#include <string.h>
 
-#define DefaultMemSize      0x00100000
-#define DefaultDisplayStart 0x000E7F00
-
-#define ROMStart     0xFFFFF800
-#define ROMWords     512
-#define IOStart      0xFFFFFFC0
 
 const uint32_t NUM_REGS = 32; 
-const uint32_t SIZE_MEM = 1048575;
+const uint32_t SIZE_MEM = DefaultMemSize;
 
 bool jumped = false;
 
-static const uint32_t program[1000] = {
+static const uint32_t program[ROMWords] = {
 #include "oberonfib.bin"
 };
 
@@ -23,14 +18,99 @@ static const uint32_t program[1000] = {
 RISC_V *riscv_new() {
   RISC_V *machine = malloc(sizeof(RISC_V));
   if (machine == NULL)
-    return NULL;
-  machine->pc = 0;
-  machine->registers = malloc(NUM_REGS * sizeof(ureg_t));
+    exit(2);
+  machine->mem_size = DefaultMemSize;
+
+  machine->display_start = DefaultDisplayStart;
+  machine->fb_width = RISC_FRAMEBUFFER_WIDTH / 32;
+  machine->fb_height = RISC_FRAMEBUFFER_HEIGHT;
+  machine->damage = (struct Damage){
+    .x1 = 0,
+    .y1 = 0,
+    .x2 = machine->fb_width - 1,
+    .y2 = machine->fb_height - 1
+  };
   machine->registers[0] = 0;
-  machine->registers[2] = 0xFFFFF; // sp
+  riscv_reset(machine);
   machine->RAM = malloc(SIZE_MEM * sizeof(byte_t));
+  memcpy(machine->ROM, program, sizeof(machine->ROM));
   return machine;
 }
+
+void riscv_set_leds(RISC_V *machine, const struct RISC_LED *leds) {
+  machine->leds = leds;
+}
+
+void riscv_set_serial(RISC_V *machine, const struct RISC_Serial *serial) {
+  machine->serial = serial;
+}
+
+void riscv_set_spi(RISC_V *machine, int index, const struct RISC_SPI *spi) {
+  if (index == 1 || index == 2) {
+    machine->spi[index] = spi;
+  }
+}
+
+void riscv_set_clipboard(RISC_V *machine, const struct RISC_Clipboard *clipboard) {
+  machine->clipboard = clipboard;
+}
+
+void riscv_set_switches(RISC_V *machine, int switches) {
+  machine->switches = switches;
+}
+
+void riscv_set_time(RISC_V *machine, uint32_t tick) {
+  machine->current_tick = tick;
+}
+
+void riscv_mouse_moved(RISC_V *machine, int mouse_x, int mouse_y) {
+  if (mouse_x >= 0 && mouse_x < 4096) {
+    machine->mouse = (machine->mouse & ~0x00000FFF) | mouse_x;
+  }
+  if (mouse_y >= 0 && mouse_y < 4096) {
+    machine->mouse = (machine->mouse & ~0x00FFF000) | (mouse_y << 12);
+  }
+}
+
+void riscv_mouse_button(RISC_V *machine, int button, bool down) {
+  if (button >= 1 && button < 4) {
+    uint32_t bit = 1 << (27 - button);
+    if (down) {
+      machine->mouse |= bit;
+    } else {
+      machine->mouse &= ~bit;
+    }
+  }
+}
+
+void riscv_keyboard_input(RISC_V *machine, uint8_t *scancodes, uint32_t len) {
+  if (sizeof(machine->key_buf) - machine->key_cnt >= len) {
+    memmove(&machine->key_buf[machine->key_cnt], scancodes, len);
+    machine->key_cnt += len;
+  }
+}
+
+uint32_t *riscv_get_framebuffer_ptr(RISC_V *machine) {
+  // Technically unsafe...
+  return (uint32_t*)&machine->RAM[machine->display_start/4];
+}
+
+struct Damage riscv_get_framebuffer_damage(RISC_V *machine) {
+  struct Damage dmg = machine->damage;
+  machine->damage = (struct Damage){
+    .x1 = machine->fb_width,
+    .x2 = 0,
+    .y1 = machine->fb_height,
+    .y2 = 0
+  };
+  return dmg;
+}
+
+void riscv_reset(RISC_V *machine) {
+  machine->pc = ROMStart;
+}
+
+// -- CPU --
 
 uint8_t riscv_get_funct3(uint32_t instruction) {
   return (instruction >> 12) & 0x7;
@@ -88,29 +168,6 @@ int32_t riscv_get_imm_typei(uint32_t instruction) {
 
 uint8_t riscv_get_opcode(uint32_t instruction) { return instruction & 0x7F; }
 
-byte_t riscv_read_mem(RISC_V *machine, addr_t addr) {
-  if (addr < SIZE_MEM) {
-    return machine->RAM[addr];
-  } else {
-    printf("Illegal load???");
-    return 0;
-  }
-}
-
-// TODO Make memory access circular
-word_t riscv_read_mem_32(RISC_V *machine, addr_t addr) {
-  return riscv_read_mem(machine, addr) |
-         riscv_read_mem(machine, add(addr, 1)) << 8 | 
-         riscv_read_mem(machine, add(addr, 2)) << 16 | 
-         riscv_read_mem(machine, add(addr, 3)) << 24;
-}
-
-#ifdef RV64
-ureg_t riscv_read_mem_64(RISC_V *machine, addr_t addr) {
-  return riscv_read_mem_32(machine, addr) << 32 |
-         riscv_read_mem_32(machine, addr + 4);
-}
-#endif
 
 #ifdef RV64
 void riscv_immediate_arithmetic_word(RISC_V *machine, uint32_t instruction) {
@@ -159,7 +216,7 @@ void riscv_immediate_arithmetic(RISC_V *machine, uint32_t instruction) {
   switch (funct3) {
   case 0x0: // ADDI 
     printf("addi x%d, x%d, %d", rd, rs1_name, imm);
-    riscv_write_register(machine, rd, add((reg_t)*rs1, imm));
+    riscv_write_register(machine, rd, *rs1 + imm);
     break;
   case 0x1: // SLLI
     printf("slli x%d, x%d, %d", rd, rs1_name, imm);
@@ -300,10 +357,10 @@ void riscv_arithmetic(RISC_V *machine, uint32_t instruction) {
     case 0x0:             // ADD/SUB
       if (funct7 == 0x20) { // SUB
         printf("sub x%d, x%d, x%d", rd, rs1_name, rs2_name);
-        riscv_write_register(machine, rd, sub(*rs1, *rs2));
+        riscv_write_register(machine, rd, *rs1 - *rs2);
       } else if (funct7 == 0x0) {// ADD
         printf("add x%d, x%d, x%d", rd, rs1_name, rs2_name);
-        riscv_write_register(machine, rd, add(*rs1, *rs2));
+        riscv_write_register(machine, rd, *rs1 + *rs2);
       }
       break;
     case 0x1: // SLL
@@ -383,7 +440,113 @@ void riscv_arithmetic_word(RISC_V *machine, uint32_t instruction) {
 }
 #endif
 
-void riscv_mem_load(RISC_V *machine, uint32_t instruction) {
+static uint32_t riscv_load_io(RISC_V *machine, uint32_t address) {
+  switch (address - IOStart) {
+    case 0: {
+      // Millisecond counter
+      machine->progress--;
+      return machine->current_tick;
+    }
+    case 4: {
+      // Switches
+      return machine->switches;
+    }
+    case 8: {
+      // RS232 data
+      if (machine->serial) {
+        return machine->serial->read_data(machine->serial);
+      }
+      return 0;
+    }
+    case 12: {
+      // RS232 status
+      if (machine->serial) {
+        return machine->serial->read_status(machine->serial);
+      }
+      return 0;
+    }
+    case 16: {
+      // SPI data
+      const struct RISC_SPI *spi = machine->spi[machine->spi_selected];
+      if (spi != NULL) {
+        return spi->read_data(spi);
+      }
+      return 255;
+    }
+    case 20: {
+      // SPI status
+      // Bit 0: rx ready
+      // Other bits unused
+      return 1;
+    }
+    case 24: {
+      // Mouse input / keyboard status
+      uint32_t mouse = machine->mouse;
+      if (machine->key_cnt > 0) {
+        mouse |= 0x10000000;
+      } else {
+        machine->progress--;
+      }
+      return mouse;
+    }
+    case 28: {
+      // Keyboard input
+      if (machine->key_cnt > 0) {
+        uint8_t scancode = machine->key_buf[0];
+        machine->key_cnt--;
+        memmove(&machine->key_buf[0], &machine->key_buf[1], machine->key_cnt);
+        return scancode;
+      }
+      return 0;
+    }
+    case 40: {
+      // Clipboard control
+      if (machine->clipboard) {
+        return machine->clipboard->read_control(machine->clipboard);
+      }
+      return 0;
+    }
+    case 44: {
+      // Clipboard data
+      if (machine->clipboard) {
+        return machine->clipboard->read_data(machine->clipboard);
+      }
+      return 0;
+    }
+    default: {
+      return 0;
+    }
+  }
+}
+byte_t riscv_load_mem(RISC_V *machine, addr_t addr) {
+  if (addr < SIZE_MEM) {
+    return machine->RAM[addr];
+  } else {
+    printf("Illegal IO load; must be loaded as a word.");
+    return 0;
+  }
+}
+
+// TODO Make memory access circular
+word_t riscv_load_mem_32(RISC_V *machine, addr_t addr) {
+  if (addr < SIZE_MEM)
+    return riscv_load_mem(machine, addr) |
+           riscv_load_mem(machine, addr + 1) << 8 | 
+           riscv_load_mem(machine, addr + 2) << 16 | 
+           riscv_load_mem(machine, addr + 3) << 24;
+  else
+    return riscv_load_io(machine, addr);
+}
+
+#ifdef RV64
+dword_t riscv_load_mem_64(RISC_V *machine, addr_t addr) {
+  return riscv_load_mem_32(machine, addr) << 32 |
+         riscv_load_mem_32(machine, addr + 4);
+}
+#endif
+
+
+void riscv_load(RISC_V *machine, uint32_t instruction) {
   uint32_t imm = riscv_get_imm_typei(instruction);
   uint8_t funct3 = riscv_get_funct3(instruction);
   uint8_t rs1_name = riscv_get_rs1(instruction);
@@ -405,13 +568,13 @@ void riscv_mem_load(RISC_V *machine, uint32_t instruction) {
     printf("lw x%d, %d(x%d)", rd, imm, rs1_name);
     //printf("load time, addr: %x\n", add(*rs1, imm));
     riscv_write_register(machine, rd,
-                         (reg_t)riscv_read_mem_32(machine, add(*rs1, imm)));
+                         (reg_t)riscv_load_mem_32(machine, *rs1 + imm));
     break;
 #ifdef RV64
   case 0x3: // ld
     printf("ld x%d, %d(x%d)", rd, imm, rs1_name);
     riscv_write_register(machine, rd,
-                         (reg_t)riscv_read_mem_64(machine, add(*rs1, imm)));
+                         (reg_t)riscv_load_mem_64(machine, *rs1 + imm));
     break;
 #endif
   case 0x4: // lbu
@@ -422,7 +585,7 @@ void riscv_mem_load(RISC_V *machine, uint32_t instruction) {
     printf("lhu x%d, %d(x%d)", rd, imm, rs1_name);
     riscv_write_register(machine, rd,
                          machine->RAM[*rs1 + imm] |
-                             machine->RAM[*rs1 + imm + 1] << 8);
+                         machine->RAM[*rs1 + imm + 1] << 8);
     break;
 #ifdef RV64
   case 0x6: // lwu
@@ -435,13 +598,74 @@ void riscv_mem_load(RISC_V *machine, uint32_t instruction) {
   }
 }
 
-void riscv_store_io(RISC_V *machine, uint32_t address, uint32_t value) {
-  printf("???");
+static void riscv_store_io(RISC_V *machine, uint32_t address, uint32_t value) {
+  switch (address - IOStart) {
+    case 4: {
+      // LED control
+      if (machine->leds) {
+        machine->leds->write(machine->leds, value);
+      }
+      break;
+    }
+    case 8: {
+      // RS232 data
+      if (machine->serial) {
+        machine->serial->write_data(machine->serial, value);
+      }
+      break;
+    }
+    case 16: {
+      // SPI write
+      const struct RISC_SPI *spi = machine->spi[machine->spi_selected];
+      if (spi != NULL) {
+        spi->write_data(spi, value);
+      }
+      break;
+    }
+    case 20: {
+      // SPI control
+      // Bit 0-1: slave select
+      // Bit 2:   fast mode
+      // Bit 3:   netwerk enable
+      // Other bits unused
+      machine->spi_selected = value & 3;
+      break;
+    }
+    case 40: {
+      // Clipboard control
+      if (machine->clipboard) {
+        machine->clipboard->write_control(machine->clipboard, value);
+      }
+      break;
+    }
+    case 44: {
+      // Clipboard data
+      if (machine->clipboard) {
+        machine->clipboard->write_data(machine->clipboard, value);
+      }
+      break;
+    }
+    default:
+      printf("Wrote %0x to undefined IO at address %0x.", value, address);
+      break;
+  }
 }
 
-void riscv_store_mem(RISC_V *machine, uint32_t address, uint32_t value) {
+void riscv_store_mem(RISC_V *machine, uint32_t address, byte_t value) {
   if (address < SIZE_MEM) {
     machine->RAM[address] = value;
+  } else {
+    printf("Illegal store to IO, as it is less than a word.");
+    //riscv_store_io(machine, address, value);
+  }
+}
+
+void riscv_store_mem_32(RISC_V *machine, uint32_t address, word_t value) {
+  if (address < SIZE_MEM) {
+    riscv_store_mem(machine, address + 0,  value        & 0xFF);
+    riscv_store_mem(machine, address + 1, (value >> 8)  & 0xFF);
+    riscv_store_mem(machine, address + 2, (value >> 16) & 0xFF);
+    riscv_store_mem(machine, address + 3, (value >> 24) & 0xFF);
   } else {
     riscv_store_io(machine, address, value);
   }
@@ -468,10 +692,7 @@ void riscv_store(RISC_V *machine, uint32_t instruction) {
   // TODO make this less repetitive
   case 0x2: // sw
     printf("sw x%d, %d(x%d)", rs2_name, imm, rs1_name);
-    riscv_store_mem(machine, *rs1 + imm, *rs2 & 0xFF);
-    riscv_store_mem(machine, *rs1 + imm + 1, (*rs2 >> 8) & 0xFF);
-    riscv_store_mem(machine, *rs1 + imm + 2, (*rs2 >> 16) & 0xFF);
-    riscv_store_mem(machine, *rs1 + imm + 3, (*rs2 >> 24) & 0xFF);
+    riscv_store_mem_32(machine, *rs1 + imm, *rs2);
     break;
 #ifdef RV64
   case 0x3:
@@ -493,17 +714,13 @@ void riscv_store(RISC_V *machine, uint32_t instruction) {
 }
 
 void riscv_execute_instruction(RISC_V *machine, uint32_t instruction) {
-  if (instruction == 0) {
-    printf("Illegal instruction encountered: %d", instruction);
-    return;
-  }
 
   uint8_t opcode = riscv_get_opcode(instruction);
   ureg_t rd = riscv_get_rd(instruction);
   ureg_t rs1 = riscv_get_rs1(instruction);
   switch (opcode) {
   case 0x3: // loads
-    riscv_mem_load(machine, instruction);
+    riscv_load(machine, instruction);
     break;
   case 0x13: // Arithmetic with imm RHS
     riscv_immediate_arithmetic(machine, instruction);
@@ -511,7 +728,7 @@ void riscv_execute_instruction(RISC_V *machine, uint32_t instruction) {
   case 0x17: // auipc
     printf("auipc x%d, %d", rd, riscv_get_imm_typeu(instruction));
     riscv_write_register(machine, rd,
-                         add(machine->pc, riscv_get_imm_typeu(instruction)));
+                         machine->pc + riscv_get_imm_typeu(instruction));
     break;
 #ifdef RV64
   case 0x1B: // immw
@@ -551,13 +768,25 @@ void riscv_execute_instruction(RISC_V *machine, uint32_t instruction) {
   }
 }
 
-void riscv_execute() {
-  RISC_V *machine = riscv_new();
-  for (uint32_t i = 0; i < 5000; i++) {
+void riscv_execute(RISC_V *machine, uint32_t cycles) {
+  for (uint32_t i = 0; i < cycles; i++) {
     if (i != 0 && !jumped)
       riscv_write_pc(machine, machine->pc + 4);
     jumped = false;
-    uint32_t instruction = program[machine->pc / 4];
+    word_t instruction = 0;
+    if (machine->pc < machine->mem_size) {
+      instruction = machine->RAM[machine->pc / 4];
+    } else if (machine->pc >= ROMStart) {
+      instruction = machine->ROM[(machine->pc - ROMStart) / 4];
+    } else {
+      printf("Panic! PC = %0x", machine->pc);
+      return;
+    }
+
+    if (instruction == 0) {
+      printf("Illegal instruction encountered: %d", instruction);
+      return;
+    }
     printf("INSTRUCTION:\t");
     riscv_execute_instruction(machine, instruction);
     printf(" [%08x]", instruction);

@@ -5,15 +5,8 @@
 #include <stdint.h>
 #include "risc-io.h"
 
-// This is the standard size of the framebuffer, can be overridden.
-#define RISC_FRAMEBUFFER_WIDTH 1024
-#define RISC_FRAMEBUFFER_HEIGHT 768
 
 struct RISC;
-
-struct Damage {
-  int x1, x2, y1, y2;
-};
 
 struct RISC *risc_new(void);
 void risc_configure_memory(struct RISC *risc, int megabytes_ram, int screen_width, int screen_height);

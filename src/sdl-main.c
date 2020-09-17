@@ -3,7 +3,6 @@
 #include "pclink.h"
 #include "raw-serial.h"
 #include "risc-io.h"
-#include "risc.h"
 #include "sdl-clipboard.h"
 #include "sdl-ps2.h"
 #include <SDL.h>
@@ -33,7 +32,7 @@ static enum Action map_keyboard_event(SDL_KeyboardEvent *event);
 static void show_leds(const struct RISC_LED *leds, uint32_t value);
 static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect,
                             SDL_Rect *display_rect);
-static void update_texture(struct RISC *risc, SDL_Texture *texture,
+static void update_texture(RISC_V *risc, SDL_Texture *texture,
                            const SDL_Rect *risc_rect);
 
 enum Action {
@@ -54,7 +53,7 @@ struct KeyMapping {
 };
 
 struct KeyMapping key_map[] = {
-    {SDL_PRESSED, SDLK_F4, KMOD_ALT, 0, ACTION_QUIT},
+    {SDL_PRESSED, SDLK_q, 0, 0, ACTION_QUIT},
     {SDL_PRESSED, SDLK_F12, 0, 0, ACTION_RESET},
     {SDL_PRESSED, SDLK_DELETE, KMOD_CTRL, KMOD_SHIFT, ACTION_RESET},
     {SDL_PRESSED, SDLK_F11, 0, 0, ACTION_TOGGLE_FULLSCREEN},
@@ -102,9 +101,13 @@ static void usage() {
 }
 
 int main(int argc, char *argv[]) {
-  struct RISC *risc = risc_new();
-  risc_set_serial(risc, &pclink);
-  risc_set_clipboard(risc, &sdl_clipboard);
+  RISC_V *riscv = riscv_new();
+  if (riscv == NULL) {
+    printf("Failed to allocate memory for the processor.\n");
+    exit(2);
+  }
+  riscv_set_serial(riscv, &pclink);
+  riscv_set_clipboard(riscv, &sdl_clipboard);
 
   struct RISC_LED leds = {.write = show_leds};
 
@@ -134,7 +137,7 @@ int main(int argc, char *argv[]) {
       break;
     }
     case 'L': {
-      risc_set_leds(risc, &leds);
+      riscv_set_leds(riscv, &leds);
       break;
     }
     case 'm': {
@@ -163,11 +166,11 @@ int main(int argc, char *argv[]) {
     }
     case 'S': {
       boot_from_serial = true;
-      risc_set_switches(risc, 1);
+      riscv_set_switches(riscv, 1);
       break;
     }
     case 'e': {
-      riscv_execute();
+      riscv_execute(riscv, 5000);
       break;
     }
     default: {
@@ -177,14 +180,15 @@ int main(int argc, char *argv[]) {
   }
 
   if (mem_option || size_option) {
-    risc_configure_memory(risc, mem_option, risc_rect.w, risc_rect.h);
+    printf("Changing memory/screen size is not supported.");
+    //risc_configure_memory(risc, mem_option, risc_rect.w, risc_rect.h);
   }
 
   if (optind == argc - 1) {
-    risc_set_spi(risc, 1, disk_new(argv[optind]));
+    riscv_set_spi(riscv, 1, disk_new(argv[optind]));
   } else if (optind == argc && boot_from_serial) {
     /* Allow diskless boot */
-    risc_set_spi(risc, 1, disk_new(NULL));
+    riscv_set_spi(riscv, 1, disk_new(NULL));
   } else {
     usage();
   }
@@ -196,12 +200,12 @@ int main(int argc, char *argv[]) {
     if (!serial_out) {
       serial_out = "/dev/null";
     }
-    risc_set_serial(risc, raw_serial_new(serial_in, serial_out));
+    riscv_set_serial(riscv, raw_serial_new(serial_in, serial_out));
   }
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     fail(1, "Unable to initialize SDL: %s", SDL_GetError());
-  }
+ }
   atexit(SDL_Quit);
   SDL_EnableScreenSaver();
   SDL_ShowCursor(false);
@@ -244,7 +248,7 @@ int main(int argc, char *argv[]) {
 
   SDL_Rect display_rect;
   double display_scale = scale_display(window, &risc_rect, &display_rect);
-  update_texture(risc, texture, &risc_rect);
+  update_texture(riscv, texture, &risc_rect);
   SDL_ShowWindow(window);
   SDL_RenderClear(renderer);
   SDL_RenderCopy(renderer, texture, &risc_rect, &display_rect);
@@ -282,14 +286,14 @@ int main(int argc, char *argv[]) {
           SDL_ShowCursor(mouse_is_offscreen);
           mouse_was_offscreen = mouse_is_offscreen;
         }
-        risc_mouse_moved(risc, x, risc_rect.h - y - 1);
+        riscv_mouse_moved(riscv, x, risc_rect.h - y - 1);
         break;
       }
 
       case SDL_MOUSEBUTTONDOWN:
       case SDL_MOUSEBUTTONUP: {
         bool down = event.button.state == SDL_PRESSED;
-        risc_mouse_button(risc, event.button.button, down);
+        riscv_mouse_button(riscv, event.button.button, down);
         break;
       }
 
@@ -298,7 +302,7 @@ int main(int argc, char *argv[]) {
         bool down = event.key.state == SDL_PRESSED;
         switch (map_keyboard_event(&event.key)) {
         case ACTION_RESET: {
-          risc_reset(risc);
+          riscv_reset(riscv);
           break;
         }
         case ACTION_TOGGLE_FULLSCREEN: {
@@ -315,21 +319,21 @@ int main(int argc, char *argv[]) {
           break;
         }
         case ACTION_FAKE_MOUSE1: {
-          risc_mouse_button(risc, 1, down);
+          riscv_mouse_button(riscv, 1, down);
           break;
         }
         case ACTION_FAKE_MOUSE2: {
-          risc_mouse_button(risc, 2, down);
+          riscv_mouse_button(riscv, 2, down);
           break;
         }
         case ACTION_FAKE_MOUSE3: {
-          risc_mouse_button(risc, 3, down);
+          riscv_mouse_button(riscv, 3, down);
           break;
         }
         case ACTION_OBERON_INPUT: {
           uint8_t ps2_bytes[MAX_PS2_CODE_LEN];
           int len = ps2_encode(event.key.keysym.scancode, down, ps2_bytes);
-          risc_keyboard_input(risc, ps2_bytes, len);
+          riscv_keyboard_input(riscv, ps2_bytes, len);
           break;
         }
         }
@@ -337,10 +341,11 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    risc_set_time(risc, frame_start);
-    risc_run(risc, CPU_HZ / FPS);
+    riscv_set_time(riscv, frame_start);
+    riscv_execute(riscv, CPU_HZ / FPS);
+    //risc_run(risc, CPU_HZ / FPS);
 
-    update_texture(risc, texture, &risc_rect);
+    update_texture(riscv, texture, &risc_rect);
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, &risc_rect, &display_rect);
     SDL_RenderPresent(renderer);
@@ -427,11 +432,11 @@ static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect,
 // allocate three megabyte on the stack.
 static uint32_t pixel_buf[MAX_WIDTH * MAX_HEIGHT];
 
-static void update_texture(struct RISC *risc, SDL_Texture *texture,
+static void update_texture(RISC_V *machine, SDL_Texture *texture,
                            const SDL_Rect *risc_rect) {
-  struct Damage damage = risc_get_framebuffer_damage(risc);
+  struct Damage damage = riscv_get_framebuffer_damage(machine);
   if (damage.y1 <= damage.y2) {
-    uint32_t *in = risc_get_framebuffer_ptr(risc);
+    uint32_t *in = riscv_get_framebuffer_ptr(machine);
     uint32_t out_idx = 0;
 
     for (int line = damage.y2; line >= damage.y1; line--) {

@@ -119,9 +119,13 @@ void risc_configure_memory(struct RISC *risc, int megabytes_ram, int screen_widt
 
   // Patch the new constants in the bootloader.
   uint32_t mem_lim = risc->display_start - 16;
+  // Replaces the imm for memory limit.
+  // Right-shift because the instruction left-shifts by 16.
   risc->ROM[372] = 0x61000000 + (mem_lim >> 16);
+  // Fills in the lower bits of memory limit.
   risc->ROM[373] = 0x41160000 + (mem_lim & 0x0000FFFF);
   uint32_t stack_org = risc->display_start / 2;
+  // Same thing, but with start of stack
   risc->ROM[376] = 0x61000000 + (stack_org >> 16);
 
   // Inform the display driver of the framebuffer layout.

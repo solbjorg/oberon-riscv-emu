@@ -32,7 +32,7 @@ static enum Action map_keyboard_event(SDL_KeyboardEvent *event);
 static void show_leds(const struct RISC_LED *leds, uint32_t value);
 static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect,
                             SDL_Rect *display_rect);
-static void update_texture(RISC_V *risc, SDL_Texture *texture,
+static void update_texture(CPU *risc, SDL_Texture *texture,
                            const SDL_Rect *risc_rect);
 
 enum Action {
@@ -53,15 +53,13 @@ struct KeyMapping {
 };
 
 struct KeyMapping key_map[] = {
-    {SDL_PRESSED, SDLK_q, 0, 0, ACTION_QUIT},
+    {SDL_PRESSED, SDLK_F10, 0, 0, ACTION_QUIT},
     {SDL_PRESSED, SDLK_F12, 0, 0, ACTION_RESET},
     {SDL_PRESSED, SDLK_DELETE, KMOD_CTRL, KMOD_SHIFT, ACTION_RESET},
     {SDL_PRESSED, SDLK_F11, 0, 0, ACTION_TOGGLE_FULLSCREEN},
     {SDL_PRESSED, SDLK_RETURN, KMOD_ALT, 0, ACTION_TOGGLE_FULLSCREEN},
     {SDL_PRESSED, SDLK_f, KMOD_GUI, KMOD_SHIFT,
      ACTION_TOGGLE_FULLSCREEN}, // Mac?
-    {SDL_PRESSED, SDLK_LALT, 0, 0, ACTION_FAKE_MOUSE2},
-    {SDL_RELEASED, SDLK_LALT, 0, 0, ACTION_FAKE_MOUSE2},
 };
 
 static struct option long_options[] = {
@@ -101,7 +99,7 @@ static void usage() {
 }
 
 int main(int argc, char *argv[]) {
-  RISC_V *riscv = riscv_new();
+  CPU *riscv = riscv_new();
   if (riscv == NULL) {
     printf("Failed to allocate memory for the processor.\n");
     exit(2);
@@ -122,7 +120,7 @@ int main(int argc, char *argv[]) {
   bool boot_from_serial = false;
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "z:feLm:s:I:O:S", long_options,
+  while ((opt = getopt_long(argc, argv, "z:fLm:s:I:O:S", long_options,
                             NULL)) != -1) {
     switch (opt) {
     case 'z': {
@@ -169,10 +167,6 @@ int main(int argc, char *argv[]) {
       riscv_set_switches(riscv, 1);
       break;
     }
-    case 'e': {
-      riscv_execute(riscv, 5000);
-      break;
-    }
     default: {
       usage();
     }
@@ -185,6 +179,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (optind == argc - 1) {
+    printf("Booting from disk %s\n", argv[optind]);
     riscv_set_spi(riscv, 1, disk_new(argv[optind]));
   } else if (optind == argc && boot_from_serial) {
     /* Allow diskless boot */
@@ -356,6 +351,7 @@ int main(int argc, char *argv[]) {
       SDL_Delay(delay);
     }
   }
+  riscv_print_trace(riscv);
   return 0;
 }
 
@@ -397,13 +393,7 @@ static enum Action map_keyboard_event(SDL_KeyboardEvent *event) {
 
 static void show_leds(const struct RISC_LED *leds, uint32_t value) {
   printf("LEDs: ");
-  for (int i = 7; i >= 0; i--) {
-    if (value & (1 << i)) {
-      printf("%d", i);
-    } else {
-      printf("-");
-    }
-  }
+  printf("%x", value);
   printf("\n");
 }
 
@@ -432,7 +422,7 @@ static double scale_display(SDL_Window *window, const SDL_Rect *risc_rect,
 // allocate three megabyte on the stack.
 static uint32_t pixel_buf[MAX_WIDTH * MAX_HEIGHT];
 
-static void update_texture(RISC_V *machine, SDL_Texture *texture,
+static void update_texture(CPU *machine, SDL_Texture *texture,
                            const SDL_Rect *risc_rect) {
   struct Damage damage = riscv_get_framebuffer_damage(machine);
   if (damage.y1 <= damage.y2) {

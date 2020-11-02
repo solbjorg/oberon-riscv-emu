@@ -6,7 +6,7 @@ RISC_CFLAGS = $(CFLAGS) -std=c99 `$(SDL2_CONFIG) --cflags --libs` -lm
 RISC_SOURCE = \
 	src/sdl-main.c \
 	src/sdl-ps2.c src/sdl-ps2.h \
-	src/emu/riscv.c src/emu/riscv.h \
+	src/emu/cpu.h src/emu/cpu.c src/emu/riscv.h src/emu/riscv.c \
 	src/emu/utils.h \
 	src/risc.c src/risc.h src/risc-boot.inc \
 	src/risc-fp.c src/risc-fp.h \

@@ -30,7 +30,8 @@ CPU *riscv_new() {
   machine->mem_size = DefaultMemSize;
   machine->num_regs = 32;
   machine->registers = malloc(machine->num_regs * sizeof(ureg_t));
-  machine->registers[0] = 0;
+  for(int i = 0; i < machine->num_regs; i++)
+    machine->registers[i] = 0;
 
   machine->display_start = DefaultDisplayStart;
   machine->fb_width = RISC_FRAMEBUFFER_WIDTH / 32;

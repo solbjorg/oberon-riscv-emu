@@ -91,6 +91,7 @@ void riscv_set_spi(CPU *machine, int index, const struct RISC_SPI *spi);
 void riscv_set_clipboard(CPU *machine, const struct RISC_Clipboard *clipboard);
 void riscv_set_switches(CPU *machine, int switches);
 void riscv_set_time(CPU *machine, uint32_t tick);
+void riscv_set_logging(CPU *machine, bool log);
 void riscv_mouse_moved(CPU *machine, int mouse_x, int mouse_y);
 void riscv_mouse_button(CPU *machine, int button, bool down);
 void riscv_keyboard_input(CPU *machine, uint8_t *scancodes, uint32_t len);

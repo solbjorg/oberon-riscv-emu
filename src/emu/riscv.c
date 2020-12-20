@@ -4,47 +4,8 @@
 #include <string.h>
 #include <stdarg.h>
 
-//------------------------------------------------------------------------
-// Copyright (c) 2020 Ted Fried
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-//
-//------------------------------------------------------------------------
-
-#define U_immediate instruction >> 12
-#define J_immediate_SE (instruction&0x80000000) ? 0xFFE00000 | (instruction&0x000FF000) | (instruction&0x00100000)>>9 | (instruction&0x80000000)>>11 | (instruction&0x7FE00000)>>20 : (instruction&0x000FF000) | (instruction&0x00100000)>>9 | (instruction&0x80000000)>>11 | (instruction&0x7FE00000)>>20  
-#define B_immediate_SE (instruction&0x80000000) ? 0xFFFFE000 | (instruction&0xF00)>>7 | (instruction&0x7E000000)>>20 | (instruction&0x80)<<4 | (instruction&0x80000000)>> 19 : (instruction&0xF00)>>7 | (instruction&0x7E000000)>>20 | (instruction&0x80)<<4 | (instruction&0x80000000)>> 19
-#define I_immediate_SE (instruction&0x80000000) ? 0xFFFFF000 | instruction >> 20 : instruction >> 20
-#define S_immediate_SE (instruction&0x80000000) ? 0xFFFFF000 | (instruction&0xFE000000)>>20 | (instruction&0xF80)>>7 : (instruction&0xFE000000)>>20 | (instruction&0xF80)>>7
-
-#define funct7 ((unsigned char) ((instruction&0xFE000000) >> 25) )
-#define rs2 ((unsigned char) ((instruction&0x01F00000) >> 20) )
-#define rs1 ((unsigned char) ((instruction&0x000F8000) >> 15) )
-#define funct3 ((unsigned char) ((instruction&0x00007000) >> 12) )
-#define rd ((unsigned char) ((instruction&0x00000F80) >> 7 ) )
-#define opcode ((instruction&0x0000007F) )
-
-uint8_t shamt;
-uint32_t instruction;
-uint32_t temp;
-bool logging = false;
 bool terminate = false;
+bool logging = false;
 
 static const uint32_t program[ROMWords] = {
 #include "bootloader.inc"
@@ -89,11 +50,57 @@ CPU *riscv_new() {
     machine->stack_trace[i] = (Trace){ .file = "", .pos = 0, .file_pos = 0 };
   }
   machine->stack_index = 0;
+  machine->logging = false;
   return machine;
 }
+#include "cpu.h"
 
+// Emulator from https://github.com/MicroCoreLabs/Projects/blob/master/RISCV_C_Version/C_Version/riscv.c
+// Modifications: fixing LB/U and adding the M extension.
+//-------------------------------------------------------------------------
+// Copyright (c) 2020 Ted Fried
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+//------------------------------------------------------------------------
+
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+
+#define U_immediate instruction >> 12
+#define J_immediate_SE (instruction&0x80000000) ? 0xFFE00000 | (instruction&0x000FF000) | (instruction&0x00100000)>>9 | (instruction&0x80000000)>>11 | (instruction&0x7FE00000)>>20 : (instruction&0x000FF000) | (instruction&0x00100000)>>9 | (instruction&0x80000000)>>11 | (instruction&0x7FE00000)>>20  
+#define B_immediate_SE (instruction&0x80000000) ? 0xFFFFE000 | (instruction&0xF00)>>7 | (instruction&0x7E000000)>>20 | (instruction&0x80)<<4 | (instruction&0x80000000)>> 19 : (instruction&0xF00)>>7 | (instruction&0x7E000000)>>20 | (instruction&0x80)<<4 | (instruction&0x80000000)>> 19
+#define I_immediate_SE (instruction&0x80000000) ? 0xFFFFF000 | instruction >> 20 : instruction >> 20
+#define S_immediate_SE (instruction&0x80000000) ? 0xFFFFF000 | (instruction&0xFE000000)>>20 | (instruction&0xF80)>>7 : (instruction&0xFE000000)>>20 | (instruction&0xF80)>>7
+
+#define funct7 ((unsigned char) ((instruction&0xFE000000) >> 25) )
+#define rs2 ((unsigned char) ((instruction&0x01F00000) >> 20) )
+#define rs1 ((unsigned char) ((instruction&0x000F8000) >> 15) )
+#define funct3 ((unsigned char) ((instruction&0x00007000) >> 12) )
+#define rd ((unsigned char) ((instruction&0x00000F80) >> 7 ) )
+#define opcode ((instruction&0x0000007F) )
+
+uint8_t shamt;
+uint32_t instruction;
+uint32_t temp;
 
 void riscv_execute(CPU *machine, uint32_t cycles) {
+  logging = machine->logging;
   machine->progress = 20;
   for (uint32_t i = 0; i < cycles && machine->progress; i++) {
     if (machine->pc < machine->mem_size) {
@@ -107,6 +114,7 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
     shamt=rs2;
 
     write_log("PC:0x%x\n", machine->pc);
+    //printf("PC:0x%x\n", machine->pc);
     int insttype = 0;
     switch (opcode) {
       case 0b0110011:
@@ -204,7 +212,7 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
         break;
       case 3:
         write_log("x%d %d(x%d)", rs2, S_immediate_SE, rs1);
-        write_log(" Store to 0x%x of value 0x%x", (S_immediate_SE) + machine->registers[rs1], machine->registers[rs2]);
+        write_log("\nSTORE:0x%x\nof value 0x%x", (S_immediate_SE) + machine->registers[rs1], machine->registers[rs2]);
         break;
       case 4:
         write_log("x%d x%d %d", rs1, rs2, B_immediate_SE);
@@ -221,17 +229,14 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
     write_log(" [%08x]", instruction);
     write_log("\n");
 
+
     //write_log("rd:%d rs1:%d rs2:%d U_immediate:0x%x J_immediate:0x%x B_immediate:0x%x I_immediate:0x%x S_immediate:0x%x funct3:0x%x funct7:0x%x\n",rd,rs1,rs2,U_immediate,J_immediate_SE,B_immediate_SE,I_immediate_SE,S_immediate_SE,funct3,funct7);
     write_log("Regs:\n"); for (int i=0; i<32; i++) { if (machine->registers[i] != 0) write_log("x%d: 0x%x\n",i,machine->registers[i]); } write_log("\n"); 
     //printf("Memory: "); for (int i=0; i<7; i++) { printf("Addr%d:%x ",i,machine->RAM[i]); } printf("\n");
     if (terminate) {
-      write_log("Stack trace:\n");
-      riscv_print_trace(machine);
-
-      write_log("Mem:\n");
-      for (int i=0; i<machine->mem_size/4; i++) { if (machine->RAM[i] != 0) write_log("%x: 0x%x\n",i*4,machine->RAM[i]); } write_log("\n"); 
-
-      exit(1);
+      printf("Instruction: 0x%08x", instruction);
+      printf("PC: 0x%08x", machine->pc);
+      riscv_print_trace(machine); exit(1);
     }
   }
 }

@@ -66,6 +66,7 @@ static struct option long_options[] = {
     {"zoom", required_argument, NULL, 'z'},
     {"fullscreen", no_argument, NULL, 'f'},
     {"leds", no_argument, NULL, 'L'},
+    {"logging", no_argument, NULL, 'l'},
     {"mem", required_argument, NULL, 'm'},
     {"size", required_argument, NULL, 's'},
     {"serial-in", required_argument, NULL, 'I'},
@@ -89,8 +90,7 @@ static void usage() {
        "  --fullscreen          Start the emulator in full screen mode\n"
        "  --zoom REAL           Scale the display in windowed mode\n"
        "  --leds                Log LED state on stdout\n"
-       "  --mem MEGS            Set memory size\n"
-       "  --size WIDTHxHEIGHT   Set framebuffer size\n"
+       "  --logging             Output logs from the emulator. NOTE: Significantly slows Oberon down!\n"
        "  --boot-from-serial    Boot from serial line (disk image not "
        "required)\n"
        "  --serial-in FILE      Read serial input from FILE\n"
@@ -136,6 +136,10 @@ int main(int argc, char *argv[]) {
     }
     case 'L': {
       riscv_set_leds(riscv, &leds);
+      break;
+    }
+    case 'l': {
+      riscv_set_logging(riscv, true);
       break;
     }
     case 'm': {

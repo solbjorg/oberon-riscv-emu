@@ -52,12 +52,14 @@ typedef struct CPU {
   uint8_t num_regs;
   uint32_t display_start;
 
-  uint32_t progress;
   uint32_t current_tick;
   uint32_t mouse;
   uint8_t  key_buf[16];
   uint32_t key_cnt;
   uint32_t switches;
+
+  uint32_t progress;
+  bool     logging;
 
   const struct RISC_LED *leds;
   const struct RISC_Serial *serial;

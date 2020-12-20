@@ -140,9 +140,15 @@ void riscv_store_io(CPU *machine, uint32_t address, uint32_t value) {
               trace->file[trace->file_pos++] = (char)value;
               break;
             }
+            case 0xBB: {
+              riscv_print_trace(machine);
+              machine->stack_index = 0;
+              break;
+            }
             case 0xCC: {
               Trace *trace = &machine->stack_trace[machine->stack_index];
               trace->file[trace->file_pos] = '\0';
+              trace->file_pos = 0;
               trace->pos = value % 0x1000000;
               //printf("Function call at pos %d in %s\n", trace->pos, trace->file);
               machine->stack_index++;
@@ -243,6 +249,10 @@ void riscv_set_time(CPU *machine, uint32_t tick) {
   machine->current_tick = tick;
 }
 
+void riscv_set_logging(CPU *machine, bool log) {
+  machine->logging = log;
+}
+
 void riscv_mouse_moved(CPU *machine, int mouse_x, int mouse_y) {
   if (mouse_x >= 0 && mouse_x < 4096) {
     machine->mouse = (machine->mouse & ~0x00000FFF) | mouse_x;
@@ -294,4 +304,6 @@ void riscv_print_trace(CPU *machine) {
   for (uint16_t i = 0; i < machine->stack_index; i++) {
     printf("Entering from module %s at position %d\n", machine->stack_trace[i].file, machine->stack_trace[i].pos);
   }
+  //printf("Mem:\n");
+  //for (int i=0; i<machine->mem_size/4; i++) { if (machine->RAM[i] != 0) printf("%x: 0x%x\n",i*4,machine->RAM[i]); } printf("\n"); 
 }

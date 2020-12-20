@@ -1,7 +1,9 @@
 # Oberon RISC-V Emulator
 Most of this readme is similar to the one in pdewacht's [RISC emulator](https://github.com/pdewacht/oberon-risc-emu/).
 
-This is an emulator for Oberon running on RV32IM. For more information on Project Oberon,
+This is an emulator for Oberon running on RV32IM. Most of the core of the emulator is by Ted Fried, and can be found [here](https://github.com/MicroCoreLabs/Projects/blob/master/RISCV_C_Version/C_Version/riscv.c). 
+
+For more information on Project Oberon,
 [see Niklaus Wirth's site](https://www.inf.ethz.ch/personal/wirth/). For
 newcomers to the Oberon family of operating systems, the document
 [Using Oberon] in the [Project Oberon section] is a must-read.

@@ -61,10 +61,11 @@ for my own future reference.)
 ## Disk image
 
 You can find a RISC-V disk image in the [DiskImage/](DiskImage/) directory. It is mostly up-to-date, excepting:
-- libraries for drawing circuits
-- some programs such as checkers and EBNF, although they should be easy to add if you so wish!
+
+- libraries for drawing circuits, and some programs such as checkers and EBNF - these should be easy to add if you so wish
 - unsupported network interfaces: PCLink works, wireless network interfaces don't
-To build your own RISC-V image, see [the RISC-V port here](https://github.com/solbjorg/oberon-riscv).
+
+To build your own RISC-V image, see [the full RISC-V port here](https://github.com/solbjorg/oberon-riscv).
 
 ## Command line options
 
@@ -74,7 +75,7 @@ Usage: `risc [options] disk-image.dsk`
 * `--leds` Print the LED changes to stdout. Useful if you're working on the kernel,
   noisy otherwise.
 
-Note: this emulator currently doesn't support variable resolution and memory allocation.
+Note: this emulator currently doesn't support variable resolution and memory.
 
 To run Oberon under RISC-V, simply run `./risc DiskImage/RVOberon.dsk`.
 

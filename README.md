@@ -62,7 +62,7 @@ You can find a RISC-V disk image in the [DiskImage/](DiskImage/) directory. It i
 - libraries for drawing circuits
 - some programs such as checkers and EBNF, although they should be easy to add if you so wish!
 - unsupported network interfaces: PCLink works, wireless network interfaces don't
-To build your own RISC-V image, see (the RISC-V port here)[https://github.com/solbjorg/oberon-riscv].
+To build your own RISC-V image, see [the RISC-V port here](https://github.com/solbjorg/oberon-riscv).
 
 ## Command line options
 

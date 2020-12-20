@@ -1,6 +1,7 @@
-# Oberon RISC Emulator
+# Oberon RISC-V Emulator
+Most of this readme is similar to the one in pdewacht's [RISC emulator](https://github.com/pdewacht/oberon-risc-emu/).
 
-This is an emulator for the Oberon RISC machine. For more information,
+This is an emulator for Oberon running on RV32IM. For more information on Project Oberon,
 [see Niklaus Wirth's site](https://www.inf.ethz.ch/personal/wirth/). For
 newcomers to the Oberon family of operating systems, the document
 [Using Oberon] in the [Project Oberon section] is a must-read.
@@ -57,35 +58,23 @@ for my own future reference.)
 
 ## Disk image
 
-You can find an up-to-date disk image in the [DiskImage/](DiskImage/)
-directory. These images contain a full Project Oberon 2013 system,
-with all source code, symbol files, etc.
-
-They also have a few tweaks for better integration with the emulator
-(though it should still work fine on real hardware):
-
-* The Display module supports variable display resolution. (The
-  original module was hardcoded for 1024x768.)
-
-* There's a Clipboard module for basic clipboard integration,
-  documented below.
-
-The source code for these modifications can be found in the
-[Mods/](Mods/) directory. The tools to generate the disk image exist
-in the [Project Norebo] repository.
-
-[Project Norebo]: https://github.com/pdewacht/project-norebo
-
+You can find a RISC-V disk image in the [DiskImage/](DiskImage/) directory. It is mostly up-to-date, excepting:
+- libraries for drawing circuits
+- some programs such as checkers and EBNF, although they should be easy to add if you so wish!
+- unsupported network interfaces: PCLink works, wireless network interfaces don't
+To build your own RISC-V image, see (the RISC-V port here)[https://github.com/solbjorg/oberon-riscv].
 
 ## Command line options
 
 Usage: `risc [options] disk-image.dsk`
 
 * `--fullscreen` Start the emulator in fullscreen mode.
-* `--mem <megs>` Give the system more than 1 megabyte of RAM.
-* `--size <width>x<height>` Use a non-standard window size.
 * `--leds` Print the LED changes to stdout. Useful if you're working on the kernel,
   noisy otherwise.
+
+Note: this emulator currently doesn't support variable resolution and memory allocation.
+
+To run Oberon under RISC-V, simply run `./risc DiskImage/RVOberon.dsk`.
 
 ## Keyboard and mouse
 
@@ -99,22 +88,10 @@ The following keys are available:
 
 
 ## Transferring files
+First start the PCLink1 task by middle-clicking on the PCLink1.Run command. Transfer files using the pcreceive.sh and pcsend.sh scripts.
+(Note that files sent from Oberon to your file system will not be readable by `cat`, as they use CR line endings.)
 
-First start the PCLink1 task by middle-clicking on the PCLink1.Run command.
-Transfer files using the pcreceive.sh and pcsend.sh scripts.
-
-Alternatively, use the clipboard integration to exchange text.
-
-
-## Clipboard integration
-
-The Clipboard module provides access to the host operating system's
-clipboard using these commands:
-
-* `Clipboard.Paste`
-* `Clipboard.CopySelection`
-* `Clipboard.CopyViewer`
-
+Clipboard integration is currently untested.
 
 ## Known issues
 

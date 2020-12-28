@@ -13,13 +13,14 @@ static const uint32_t program[ROMWords] = {
 
 void write_log(const char *format, ...)
 {
-  va_list args;
-  va_start(args, format);
+  if (logging) {
+    va_list args;
+    va_start(args, format);
 
-  if(logging)
     vprintf(format, args);
 
-  va_end(args);
+    va_end(args);
+  }
 }
 
 CPU *riscv_new() {
@@ -114,8 +115,6 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
     }
     shamt=rs2;
 
-    write_log("PC:0x%x\n", machine->pc);
-    //printf("PC:0x%x\n", machine->pc);
     int insttype = 0;
     switch (opcode) {
       case 0b0110011:
@@ -141,7 +140,7 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
         break;
     }
  
-    write_log("INSTRUCTION:\t");
+    write_log("PC:0x%x\nINSTRUCTION:\t",machine->pc);
     // https://github.com/MicroCoreLabs/Projects/blob/master/RISCV_C_Version/C_Version/riscv.c
     if (opcode==0b0110111) { machine->registers[rd] = U_immediate << 12; write_log(" LUI "); } else // LUI
     if (opcode==0b0010111) { machine->registers[rd] = (U_immediate << 12) + machine->pc; write_log(" AUIPC "); } else // AUIPC
@@ -206,34 +205,30 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
 
     switch (insttype) {
       case 1:
-        write_log("x%d x%d x%d", rd, rs1, rs2);
+        write_log("x%d x%d x%d\n", rd, rs1, rs2);
         break;
       case 2:
-        write_log("x%d x%d %d", rd, rs1, I_immediate_SE);
+        write_log("x%d x%d %d\n", rd, rs1, I_immediate_SE);
         break;
       case 3:
-        write_log("x%d %d(x%d)", rs2, S_immediate_SE, rs1);
-        write_log("\nSTORE:0x%x\nof value 0x%x", (S_immediate_SE) + machine->registers[rs1], machine->registers[rs2]);
+        write_log("x%d %d(x%d)\n", rs2, S_immediate_SE, rs1);
         break;
       case 4:
-        write_log("x%d x%d %d", rs1, rs2, B_immediate_SE);
+        write_log("x%d x%d %d\n", rs1, rs2, B_immediate_SE);
         break;
       case 5:
-        write_log("x%d %d", rd, U_immediate);
+        write_log("x%d %d\n", rd, U_immediate);
         break;
       case 6:
-        write_log("x%d %d", rd, J_immediate_SE);
+        write_log("x%d %d\n", rd, J_immediate_SE);
         if (rd == 0 && (J_immediate_SE) == 0) { terminate = true; }
         break;
       default: printf("invalid insttype\n"); write_log(" [%08x]", instruction); terminate = true;
     }
-    write_log(" [%08x]", instruction);
-    write_log("\n");
-
-
-    //write_log("rd:%d rs1:%d rs2:%d U_immediate:0x%x J_immediate:0x%x B_immediate:0x%x I_immediate:0x%x S_immediate:0x%x funct3:0x%x funct7:0x%x\n",rd,rs1,rs2,U_immediate,J_immediate_SE,B_immediate_SE,I_immediate_SE,S_immediate_SE,funct3,funct7);
-    write_log("Regs:\n"); for (int i=0; i<32; i++) { if (machine->registers[i] != 0) write_log("x%d: 0x%x\n",i,machine->registers[i]); } write_log("\n"); 
     //printf("Memory: "); for (int i=0; i<7; i++) { printf("Addr%d:%x ",i,machine->RAM[i]); } printf("\n");
+    if (logging) {
+      write_log("Regs:\n"); for (int i=0; i<32; i++) { if (machine->registers[i] != 0) write_log("x%d: 0x%x\n",i,machine->registers[i]); } write_log("\n"); 
+    }
     if (terminate) {
       printf("Instruction: 0x%08x", instruction);
       printf("PC: 0x%08x", machine->pc);

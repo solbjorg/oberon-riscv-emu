@@ -60,6 +60,8 @@ struct KeyMapping key_map[] = {
     {SDL_PRESSED, SDLK_RETURN, KMOD_ALT, 0, ACTION_TOGGLE_FULLSCREEN},
     {SDL_PRESSED, SDLK_f, KMOD_GUI, KMOD_SHIFT,
      ACTION_TOGGLE_FULLSCREEN}, // Mac?
+    { SDL_PRESSED,  SDLK_LALT,   0, 0,                  ACTION_FAKE_MOUSE2 },
+    { SDL_RELEASED, SDLK_LALT,   0, 0,                  ACTION_FAKE_MOUSE2 },
 };
 
 static struct option long_options[] = {
@@ -255,7 +257,6 @@ int main(int argc, char *argv[]) {
 
   bool done = false;
   bool mouse_was_offscreen = false;
-  bool is_alt_down = false;
   while (!done) {
     uint32_t frame_start = SDL_GetTicks();
 
@@ -293,19 +294,12 @@ int main(int argc, char *argv[]) {
       case SDL_MOUSEBUTTONDOWN:
       case SDL_MOUSEBUTTONUP: {
         bool down = event.button.state == SDL_PRESSED;
-        if (event.button.button == 1 && is_alt_down)
-          riscv_mouse_button(riscv, 2, down);
-        else 
-          riscv_mouse_button(riscv, event.button.button, down);
-        break;
+        riscv_mouse_button(riscv, event.button.button, down);
       }
 
       case SDL_KEYDOWN:
       case SDL_KEYUP: {
         bool down = event.key.state == SDL_PRESSED;
-        if (event.key.keysym.sym == SDLK_LALT)
-          is_alt_down = down;
-        is_alt_down = event.key.state == SDL_PRESSED;
         switch (map_keyboard_event(&event.key)) {
         case ACTION_RESET: {
           riscv_reset(riscv);

@@ -295,6 +295,7 @@ int main(int argc, char *argv[]) {
       case SDL_MOUSEBUTTONUP: {
         bool down = event.button.state == SDL_PRESSED;
         riscv_mouse_button(riscv, event.button.button, down);
+	break;
       }
 
       case SDL_KEYDOWN:

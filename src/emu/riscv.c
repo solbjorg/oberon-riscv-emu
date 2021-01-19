@@ -177,7 +177,7 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
     if (opcode==0b0100011 && funct3==0b001) { riscv_store(machine,(S_immediate_SE)+machine->registers[rs1], (riscv_load(machine,(S_immediate_SE)+machine->registers[rs1])&0xFFFF0000) | (machine->registers[rs2]&0xFFFF)); write_log(" SH "); } else // SH
     if (opcode==0b0100011 && funct3==0b010) { riscv_store(machine,(S_immediate_SE)+machine->registers[rs1], machine->registers[rs2]); write_log(" SW "); } else // SW
     if (opcode==0b0010011 && funct3==0b000) { machine->registers[rd] = (I_immediate_SE) + machine->registers[rs1]; write_log(" ADDI "); } else // ADDI
-    if (opcode==0b0010011 && funct3==0b010) { if ((int32_t)machine->registers[rs1] < ((int32_t)I_immediate_SE)) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(" SLTI "); } else // SLTI
+    if (opcode==0b0010011 && funct3==0b010) { if ((int32_t)machine->registers[rs1] < ((int32_t)(I_immediate_SE))) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(" SLTI "); } else // SLTI
     if (opcode==0b0010011 && funct3==0b011) { if (machine->registers[rs1] < (I_immediate_SE)) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(" SLTIU "); } else // SLTIU
     if (opcode==0b0010011 && funct3==0b100) { machine->registers[rd] = machine->registers[rs1] ^ (I_immediate_SE); write_log(" XORI "); } else // XORI
     if (opcode==0b0010011 && funct3==0b110) { machine->registers[rd] = machine->registers[rs1] | (I_immediate_SE); write_log(" ORI "); } else // ORI
@@ -188,7 +188,13 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
     if (opcode==0b0110011 && funct3==0b000 && funct7==0b0000001) { machine->registers[rd] = (int32_t)machine->registers[rs1] * (int32_t)machine->registers[rs2]; write_log(" MUL "); } else // MUL
     if (opcode==0b0110011 && funct3==0b100 && funct7==0b0000001) { machine->registers[rd] = (int32_t)machine->registers[rs1] / (int32_t)machine->registers[rs2]; write_log(" DIV "); } else // DIV
 
-    if (opcode==0b0110011 && funct3==0b110 && funct7==0b0000001) { machine->registers[rd] = machine->registers[rs1] % machine->registers[rs2]; write_log(" REM "); } else // REM
+    if (opcode==0b0110011 && funct3==0b110 && funct7==0b0000001) {
+      int32_t r = (int32_t)machine->registers[rs1] % (int32_t)machine->registers[rs2];
+      r         = (r + (int32_t)machine->registers[rs2]) % (int32_t)machine->registers[rs2];
+      machine->registers[rd] = r;
+      write_log(" REM ");
+      //}
+    } else // REM
     if (opcode==0b0110011 && funct3==0b000 && funct7==0b0100000) { machine->registers[rd] = machine->registers[rs1] - machine->registers[rs2]; write_log(" SUB "); } else // SUB
     if (opcode==0b0110011 && funct3==0b000 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] + machine->registers[rs2]; write_log(" ADD "); } else // ADD
     if (opcode==0b0110011 && funct3==0b001 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] << (machine->registers[rs2]&0x1F); write_log(" SLL "); } else // SLL

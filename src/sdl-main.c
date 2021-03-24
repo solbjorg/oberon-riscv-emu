@@ -100,6 +100,43 @@ static void usage() {
   exit(1);
 }
 
+void debug(CPU *riscv) {
+  char choice;
+  riscv_print_trace(riscv);
+  while (choice != 'r') {
+    printf("Options:\n"
+           "\ts: step; r: run until next ebreak; l: toggle logging; c: reset count\n"
+           "\tp: print instructions counted; x: print regs\n");
+    scanf(" %c", &choice);
+    switch (choice) {
+    case 's': //step
+      riscv_execute(riscv, 1);
+      break;
+    case 'l': //toggle logging
+      riscv->logging = !riscv->logging;
+      printf("Logging: %0d\n", riscv->logging);
+      break;
+    case 'p': // print count
+      printf("\tInstructions counted since toggle: %d\n", riscv->num_insts);
+      break;
+    case 'c': // toggle count
+      riscv->num_insts = 0;
+      break;
+    case 'x': // print regs
+      printf("Regs:\n");
+      printf("x%0d: %d, ", 0, riscv->registers[0]);
+      for (int i = 1; i < 32; i++) {
+        printf("x%0d: %x, ", i, riscv->registers[i]);
+        if (i % 4 == 0) printf("\n");
+      }
+      printf("\n");
+      break;
+    default: // covers 'r'
+      break;
+    }
+  }
+}
+
 int main(int argc, char *argv[]) {
   CPU *riscv = riscv_new();
   if (riscv == NULL) {
@@ -343,7 +380,10 @@ int main(int argc, char *argv[]) {
     }
 
     riscv_set_time(riscv, frame_start);
-    riscv_execute(riscv, CPU_HZ / FPS);
+    bool ebreak = riscv_execute(riscv, CPU_HZ / FPS);
+    if (ebreak) {
+      debug(riscv);
+    }
     //risc_run(risc, CPU_HZ / FPS);
 
     update_texture(riscv, texture, &risc_rect);

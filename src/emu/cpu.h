@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdarg.h>
 
 #define DefaultMemSize      0x00100000
 #define DefaultDisplayStart 0x000E7F00
@@ -59,6 +60,7 @@ typedef struct CPU {
   uint32_t switches;
 
   uint32_t progress;
+  uint32_t num_insts; // count number of instructions run
   bool     logging;
 
   const struct RISC_LED *leds;
@@ -96,6 +98,7 @@ void riscv_mouse_moved(CPU *machine, int mouse_x, int mouse_y);
 void riscv_mouse_button(CPU *machine, int button, bool down);
 void riscv_keyboard_input(CPU *machine, uint8_t *scancodes, uint32_t len);
 void riscv_print_trace(CPU *machine);
+void write_log(bool logging, const char *format, ...);
 
 uint32_t *riscv_get_framebuffer_ptr(CPU *machine) ;
 struct Damage riscv_get_framebuffer_damage(CPU *machine);

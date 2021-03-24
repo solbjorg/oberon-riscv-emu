@@ -18,6 +18,7 @@
 
 CPU *riscv_new();
 
-void riscv_execute(CPU *machine, uint32_t cycles);
+// return whether an EBREAK was hit
+bool riscv_execute(CPU *machine, uint32_t cycles);
 
 #endif // __RISCV_H_

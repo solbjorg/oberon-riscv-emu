@@ -137,7 +137,10 @@ void riscv_store_io(CPU *machine, uint32_t address, uint32_t value) {
           switch(value >> 24) {
             case 0xAA: {
               Trace *trace = &machine->stack_trace[machine->stack_index];
-              trace->file[trace->file_pos++] = (char)value;
+              trace->file[trace->file_pos] = (char)(value & 0x0000FF);
+              trace->file[trace->file_pos+1] = (char)((value & 0x00FF00) >> 8);
+              trace->file[trace->file_pos+2] = (char)((value & 0xFF0000) >> 16);
+              trace->file_pos += 3;
               break;
             }
             case 0xBB: {
@@ -155,7 +158,7 @@ void riscv_store_io(CPU *machine, uint32_t address, uint32_t value) {
               break;
             }
             default:
-              printf("Unknown stack trace push.");
+              printf("Unknown stack trace push. Value: %x", value);
           }
         }
       }
@@ -177,6 +180,7 @@ void riscv_store_io(CPU *machine, uint32_t address, uint32_t value) {
     }
     default:
       printf("Wrote %0x to undefined IO at address %0x.", value, address);
+      riscv_print_trace(machine); exit(1);
       break;
   }
 }
@@ -302,8 +306,20 @@ void riscv_reset(CPU *machine) {
 
 void riscv_print_trace(CPU *machine) {
   for (uint16_t i = 0; i < machine->stack_index; i++) {
-    printf("Entering from module %s at position %d\n", machine->stack_trace[i].file, machine->stack_trace[i].pos);
+    printf("Entering module %s at position %d\n", machine->stack_trace[i].file, machine->stack_trace[i].pos);
   }
   //printf("Mem:\n");
   //for (int i=0; i<machine->mem_size/4; i++) { if (machine->RAM[i] != 0) printf("%x: 0x%x\n",i*4,machine->RAM[i]); } printf("\n"); 
+}
+
+void write_log(bool logging, const char *format, ...)
+{
+  if (logging) {
+    va_list args;
+    va_start(args, format);
+
+    vprintf(format, args);
+
+    va_end(args);
+  }
 }

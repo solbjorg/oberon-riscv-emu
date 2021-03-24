@@ -2,26 +2,12 @@
 
 #include <stdbool.h>
 #include <string.h>
-#include <stdarg.h>
 
 bool terminate = false;
-bool logging = false;
 
 static const uint32_t program[ROMWords] = {
 #include "bootloader.inc"
 };
-
-void write_log(const char *format, ...)
-{
-  if (logging) {
-    va_list args;
-    va_start(args, format);
-
-    vprintf(format, args);
-
-    va_end(args);
-  }
-}
 
 CPU *riscv_new() {
   CPU *machine = malloc(sizeof(CPU));
@@ -52,9 +38,11 @@ CPU *riscv_new() {
     machine->stack_trace[i] = (Trace){ .file = "", .pos = 0, .file_pos = 0 };
   }
   machine->stack_index = 0;
+  machine->num_insts = 0;
   machine->logging = false;
   return machine;
 }
+
 #include "cpu.h"
 
 // Emulator from https://github.com/MicroCoreLabs/Projects/blob/master/RISCV_C_Version/C_Version/riscv.c
@@ -101,8 +89,7 @@ uint8_t shamt;
 uint32_t instruction;
 uint32_t temp;
 
-void riscv_execute(CPU *machine, uint32_t cycles) {
-  logging = machine->logging;
+bool riscv_execute(CPU *machine, uint32_t cycles) {
   machine->progress = 20;
   for (uint32_t i = 0; i < cycles && machine->progress; i++) {
     if (machine->pc < machine->mem_size) {
@@ -138,107 +125,119 @@ void riscv_execute(CPU *machine, uint32_t cycles) {
       case 0b1101111:
         insttype = 6; // J
         break;
+      case 0b1110011: //ebreak
+        insttype = 7;
     }
  
-    write_log("PC:0x%x\nINSTRUCTION:\t",machine->pc);
+    write_log(machine->logging, "PC:0x%x\nINSTRUCTION:\t", machine->pc);
     // https://github.com/MicroCoreLabs/Projects/blob/master/RISCV_C_Version/C_Version/riscv.c
-    if (opcode==0b0110111) { machine->registers[rd] = U_immediate << 12; write_log(" LUI "); } else // LUI
-    if (opcode==0b0010111) { machine->registers[rd] = (U_immediate << 12) + machine->pc; write_log(" AUIPC "); } else // AUIPC
-    if (opcode==0b1101111) { machine->registers[rd] = machine->pc + 0x4; machine->pc = (J_immediate_SE) + machine->pc - 0x4; write_log(" JAL "); } else // JAL
-    if (opcode==0b1100111) { machine->registers[rd] = machine->pc + 0x4; machine->pc = (((I_immediate_SE) + machine->registers[rs1]) & 0xFFFFFFFE) - 0x4; write_log(" JALR "); } else // JALR
-    if (opcode==0b1100011 && funct3==0b000) { if (machine->registers[rs1]==machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(" BEQ "); } else // BEQ
-    if (opcode==0b1100011 && funct3==0b001) { if (machine->registers[rs1]!=machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(" BNE "); } else // BNE
-    if (opcode==0b1100011 && funct3==0b100) { if ((int32_t)machine->registers[rs1]< (int32_t)machine->registers[rs2]) machine->pc = ((B_immediate_SE) + machine->pc) - 0x4; write_log(" BLT "); } else // BLT
-    if (opcode==0b1100011 && funct3==0b101) { if ((int32_t)machine->registers[rs1]>=(int32_t)machine->registers[rs2]) machine->pc = ((B_immediate_SE) + machine->pc) - 0x4; write_log(" BGE "); } else // BGE
-    if (opcode==0b1100011 && funct3==0b110) { if (machine->registers[rs1]<machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(" BLTU ");  } else // BLTU
-    if (opcode==0b1100011 && funct3==0b111) { if (machine->registers[rs1]>=machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(" BGTU "); } else // BGTU
+    if (opcode==0b0110111) { machine->registers[rd] = U_immediate << 12; write_log(machine->logging, " LUI "); } else // LUI
+    if (opcode==0b0010111) { machine->registers[rd] = (U_immediate << 12) + machine->pc; write_log(machine->logging, " AUIPC "); } else // AUIPC
+    if (opcode==0b1101111) { machine->registers[rd] = machine->pc + 0x4; machine->pc = (J_immediate_SE) + machine->pc - 0x4; write_log(machine->logging, " JAL "); } else // JAL
+    if (opcode==0b1100111) { machine->registers[rd] = machine->pc + 0x4; machine->pc = (((I_immediate_SE) + machine->registers[rs1]) & 0xFFFFFFFE) - 0x4; write_log(machine->logging, " JALR "); } else // JALR
+    if (opcode==0b1100011 && funct3==0b000) { if (machine->registers[rs1]==machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(machine->logging, " BEQ "); } else // BEQ
+    if (opcode==0b1100011 && funct3==0b001) { if (machine->registers[rs1]!=machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(machine->logging, " BNE "); } else // BNE
+    if (opcode==0b1100011 && funct3==0b100) { if ((int32_t)machine->registers[rs1]< (int32_t)machine->registers[rs2]) machine->pc = ((B_immediate_SE) + machine->pc) - 0x4; write_log(machine->logging, " BLT "); } else // BLT
+    if (opcode==0b1100011 && funct3==0b101) { if ((int32_t)machine->registers[rs1]>=(int32_t)machine->registers[rs2]) machine->pc = ((B_immediate_SE) + machine->pc) - 0x4; write_log(machine->logging, " BGE "); } else // BGE
+    if (opcode==0b1100011 && funct3==0b110) { if (machine->registers[rs1]<machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(machine->logging, " BLTU ");  } else // BLTU
+    if (opcode==0b1100011 && funct3==0b111) { if (machine->registers[rs1]>=machine->registers[rs2]) machine->pc = ( (B_immediate_SE) + machine->pc) - 0x4; write_log(machine->logging, " BGTU "); } else // BGTU
     if (opcode==0b0000011 && funct3==0b000) {
       addr_t addr = (I_immediate_SE)+machine->registers[rs1];
       uint32_t data = (riscv_load(machine, addr) >> ((addr % 4) * 8)) & 0xFF;
-      machine->registers[rd] = data & 0x80 ? 0xFFFFFF00 | data : data; write_log(" LB "); // LB
+      machine->registers[rd] = data & 0x80 ? 0xFFFFFF00 | data : data; write_log(machine->logging, " LB "); // LB
     } else 
     if (opcode==0b0000011 && funct3==0b001) {
       addr_t addr = (I_immediate_SE)+machine->registers[rs1];
-      machine->registers[rd] = (riscv_load(machine, addr) & 0x8000) ? 0xFFFF0000| (riscv_load(machine,addr) >> ((addr%4) * 8)) : ((riscv_load(machine,addr) >> ((addr%4) * 8)) & 0xFFFF); write_log(" LH ");
+      machine->registers[rd] = (riscv_load(machine, addr) & 0x8000) ? 0xFFFF0000| (riscv_load(machine,addr) >> ((addr%4) * 8)) : ((riscv_load(machine,addr) >> ((addr%4) * 8)) & 0xFFFF); write_log(machine->logging, " LH ");
     } else // LH
-    if (opcode==0b0000011 && funct3==0b010) { machine->registers[rd] = riscv_load(machine, (I_immediate_SE)+machine->registers[rs1]); write_log(" LW "); } else // LW
+    if (opcode==0b0000011 && funct3==0b010) { machine->registers[rd] = riscv_load(machine, (I_immediate_SE)+machine->registers[rs1]); write_log(machine->logging, " LW "); } else // LW
     if (opcode==0b0000011 && funct3==0b100) {
       addr_t addr = (I_immediate_SE)+machine->registers[rs1];
       uint32_t data = (riscv_load(machine, addr) >> ((addr % 4) * 8)) & 0xFF;
-      machine->registers[rd] = data; write_log(" LBU "); // LBU
+      machine->registers[rd] = data; write_log(machine->logging, " LBU "); // LBU
     } else 
-    if (opcode==0b0000011 && funct3==0b101) { machine->registers[rd] = riscv_load(machine, (I_immediate_SE)+machine->registers[rs1]) >> ((((I_immediate_SE)+machine->registers[rs1])%4) * 8) & 0x0000FFFF; write_log(" LHU "); } else // LHU
+    if (opcode==0b0000011 && funct3==0b101) { machine->registers[rd] = riscv_load(machine, (I_immediate_SE)+machine->registers[rs1]) >> ((((I_immediate_SE)+machine->registers[rs1])%4) * 8) & 0x0000FFFF; write_log(machine->logging, " LHU "); } else // LHU
     if (opcode==0b0100011 && funct3==0b000) {
       addr_t addr = (S_immediate_SE)+machine->registers[rs1];
       word_t data = (riscv_load(machine,addr));
       word_t shamt = (addr % 4) * 8;
-      riscv_store(machine, addr, (data & (0xFFFFFFFF ^ (0xFF << shamt))) | (((machine->registers[rs2]&0xFF) << shamt))); write_log(" SB ");
+      riscv_store(machine, addr, (data & (0xFFFFFFFF ^ (0xFF << shamt))) | (((machine->registers[rs2]&0xFF) << shamt))); write_log(machine->logging, " SB ");
     } else // SB
-    if (opcode==0b0100011 && funct3==0b001) { riscv_store(machine,(S_immediate_SE)+machine->registers[rs1], (riscv_load(machine,(S_immediate_SE)+machine->registers[rs1])&0xFFFF0000) | (machine->registers[rs2]&0xFFFF)); write_log(" SH "); } else // SH
-    if (opcode==0b0100011 && funct3==0b010) { riscv_store(machine,(S_immediate_SE)+machine->registers[rs1], machine->registers[rs2]); write_log(" SW "); } else // SW
-    if (opcode==0b0010011 && funct3==0b000) { machine->registers[rd] = (I_immediate_SE) + machine->registers[rs1]; write_log(" ADDI "); } else // ADDI
-    if (opcode==0b0010011 && funct3==0b010) { if ((int32_t)machine->registers[rs1] < ((int32_t)(I_immediate_SE))) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(" SLTI "); } else // SLTI
-    if (opcode==0b0010011 && funct3==0b011) { if (machine->registers[rs1] < (I_immediate_SE)) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(" SLTIU "); } else // SLTIU
-    if (opcode==0b0010011 && funct3==0b100) { machine->registers[rd] = machine->registers[rs1] ^ (I_immediate_SE); write_log(" XORI "); } else // XORI
-    if (opcode==0b0010011 && funct3==0b110) { machine->registers[rd] = machine->registers[rs1] | (I_immediate_SE); write_log(" ORI "); } else // ORI
-    if (opcode==0b0010011 && funct3==0b111) { machine->registers[rd] = machine->registers[rs1] & (I_immediate_SE); write_log(" ANDI "); } else // ANDI
-    if (opcode==0b0010011 && funct3==0b001 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] << shamt; write_log(" SLLI "); } else // SLLI
-    if (opcode==0b0010011 && funct3==0b101 && funct7==0b0100000) {machine->registers[rd]=machine->registers[rs1]; temp=machine->registers[rs1]&0x80000000; while (shamt>0) { machine->registers[rd]=(machine->registers[rd]>>1)|temp; shamt--;} write_log(" SRAI "); } else // SRAI
-    if (opcode==0b0010011 && funct3==0b101 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] >> shamt; write_log(" SRLI "); } else // SRLI
-    if (opcode==0b0110011 && funct3==0b000 && funct7==0b0000001) { machine->registers[rd] = (int32_t)machine->registers[rs1] * (int32_t)machine->registers[rs2]; write_log(" MUL "); } else // MUL
-    if (opcode==0b0110011 && funct3==0b100 && funct7==0b0000001) { machine->registers[rd] = (int32_t)machine->registers[rs1] / (int32_t)machine->registers[rs2]; write_log(" DIV "); } else // DIV
+    if (opcode==0b0100011 && funct3==0b001) { riscv_store(machine,(S_immediate_SE)+machine->registers[rs1], (riscv_load(machine,(S_immediate_SE)+machine->registers[rs1])&0xFFFF0000) | (machine->registers[rs2]&0xFFFF)); write_log(machine->logging, " SH "); } else // SH
+    if (opcode==0b0100011 && funct3==0b010) { riscv_store(machine,(S_immediate_SE)+machine->registers[rs1], machine->registers[rs2]); write_log(machine->logging, " SW "); } else // SW
+    if (opcode==0b0010011 && funct3==0b000) { machine->registers[rd] = (I_immediate_SE) + machine->registers[rs1]; write_log(machine->logging, " ADDI "); } else // ADDI
+    if (opcode==0b0010011 && funct3==0b010) { if ((int32_t)machine->registers[rs1] < ((int32_t)(I_immediate_SE))) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(machine->logging, " SLTI "); } else // SLTI
+    if (opcode==0b0010011 && funct3==0b011) { if (machine->registers[rs1] < (I_immediate_SE)) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(machine->logging, " SLTIU "); } else // SLTIU
+    if (opcode==0b0010011 && funct3==0b100) { machine->registers[rd] = machine->registers[rs1] ^ (I_immediate_SE); write_log(machine->logging, " XORI "); } else // XORI
+    if (opcode==0b0010011 && funct3==0b110) { machine->registers[rd] = machine->registers[rs1] | (I_immediate_SE); write_log(machine->logging, " ORI "); } else // ORI
+    if (opcode==0b0010011 && funct3==0b111) { machine->registers[rd] = machine->registers[rs1] & (I_immediate_SE); write_log(machine->logging, " ANDI "); } else // ANDI
+    if (opcode==0b0010011 && funct3==0b001 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] << shamt; write_log(machine->logging, " SLLI "); } else // SLLI
+    if (opcode==0b0010011 && funct3==0b101 && funct7==0b0100000) {machine->registers[rd]=machine->registers[rs1]; temp=machine->registers[rs1]&0x80000000; while (shamt>0) { machine->registers[rd]=(machine->registers[rd]>>1)|temp; shamt--;} write_log(machine->logging, " SRAI "); } else // SRAI
+    if (opcode==0b0010011 && funct3==0b101 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] >> shamt; write_log(machine->logging, " SRLI "); } else // SRLI
+    if (opcode==0b0110011 && funct3==0b000 && funct7==0b0000001) { machine->registers[rd] = (int32_t)machine->registers[rs1] * (int32_t)machine->registers[rs2]; write_log(machine->logging, " MUL "); } else // MUL
+    if (opcode==0b0110011 && funct3==0b100 && funct7==0b0000001) { machine->registers[rd] = (int32_t)machine->registers[rs1] / (int32_t)machine->registers[rs2]; write_log(machine->logging, " DIV "); } else // DIV
 
     if (opcode==0b0110011 && funct3==0b110 && funct7==0b0000001) {
       int32_t r = (int32_t)machine->registers[rs1] % (int32_t)machine->registers[rs2];
       r         = (r + (int32_t)machine->registers[rs2]) % (int32_t)machine->registers[rs2];
       machine->registers[rd] = r;
-      write_log(" REM ");
-      //}
+      write_log(machine->logging, " REM ");
     } else // REM
-    if (opcode==0b0110011 && funct3==0b000 && funct7==0b0100000) { machine->registers[rd] = machine->registers[rs1] - machine->registers[rs2]; write_log(" SUB "); } else // SUB
-    if (opcode==0b0110011 && funct3==0b000 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] + machine->registers[rs2]; write_log(" ADD "); } else // ADD
-    if (opcode==0b0110011 && funct3==0b001 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] << (machine->registers[rs2]&0x1F); write_log(" SLL "); } else // SLL
-    if (opcode==0b0110011 && funct3==0b010 && funct7==0b0000000) { if ((int32_t)machine->registers[rs1] < (int32_t)machine->registers[rs2]) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(" SLT "); } else // SLT
-    if (opcode==0b0110011 && funct3==0b011 && funct7==0b0000000) { if (machine->registers[rs1] < machine->registers[rs2]) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(" SLTU "); } else // SLTU
-    if (opcode==0b0110011 && funct3==0b100 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] ^ machine->registers[rs2]; write_log(" XOR "); } else // XOR
-    if (opcode==0b0110011 && funct3==0b101 && funct7==0b0100000) {machine->registers[rd]=machine->registers[rs1]; shamt=(machine->registers[rs2]&0x1F); temp=machine->registers[rs1]&0x80000000; while (shamt>0) { machine->registers[rd]=(machine->registers[rd]>>1)|temp; shamt--;} write_log(" SRA "); } else // SRA
-    if (opcode==0b0110011 && funct3==0b101 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] >> (machine->registers[rs2]&0x1F); write_log(" SRL "); } else // SRL
-    if (opcode==0b0110011 && funct3==0b110 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] | machine->registers[rs2]; write_log(" OR "); } else // OR
-    if (opcode==0b0110011 && funct3==0b111 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] & machine->registers[rs2]; write_log(" AND "); } else write_log(" **INVALID** "); // AND
+    if (opcode==0b0110011 && funct3==0b000 && funct7==0b0100000) { machine->registers[rd] = machine->registers[rs1] - machine->registers[rs2]; write_log(machine->logging, " SUB "); } else // SUB
+    if (opcode==0b0110011 && funct3==0b000 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] + machine->registers[rs2]; write_log(machine->logging, " ADD "); } else // ADD
+    if (opcode==0b0110011 && funct3==0b001 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] << (machine->registers[rs2]&0x1F); write_log(machine->logging, " SLL "); } else // SLL
+    if (opcode==0b0110011 && funct3==0b010 && funct7==0b0000000) { if ((int32_t)machine->registers[rs1] < (int32_t)machine->registers[rs2]) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(machine->logging, " SLT "); } else // SLT
+    if (opcode==0b0110011 && funct3==0b011 && funct7==0b0000000) { if (machine->registers[rs1] < machine->registers[rs2]) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(machine->logging, " SLTU "); } else // SLTU
+    if (opcode==0b0110011 && funct3==0b100 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] ^ machine->registers[rs2]; write_log(machine->logging, " XOR "); } else // XOR
+    if (opcode==0b0110011 && funct3==0b101 && funct7==0b0100000) {machine->registers[rd]=machine->registers[rs1]; shamt=(machine->registers[rs2]&0x1F); temp=machine->registers[rs1]&0x80000000; while (shamt>0) { machine->registers[rd]=(machine->registers[rd]>>1)|temp; shamt--;} write_log(machine->logging, " SRA "); } else // SRA
+    if (opcode==0b0110011 && funct3==0b101 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] >> (machine->registers[rs2]&0x1F); write_log(machine->logging, " SRL "); } else // SRL
+    if (opcode==0b0110011 && funct3==0b110 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] | machine->registers[rs2]; write_log(machine->logging, " OR "); } else // OR
+    if (opcode==0b0110011 && funct3==0b111 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] & machine->registers[rs2]; write_log(machine->logging, " AND "); } else // AND
+    if (opcode==0b1110011 && funct3==0b000 && (I_immediate_SE)==1) { printf("EBREAK\n"); }
+    else write_log(machine->logging, " **INVALID** ");
 
     machine->pc = machine->pc + 0x4;
     machine->registers[0]=0;
+    machine->num_insts++;
 
     switch (insttype) {
       case 1:
-        write_log("x%d x%d x%d\n", rd, rs1, rs2);
+        write_log(machine->logging, "x%d x%d x%d\n", rd, rs1, rs2);
         break;
       case 2:
-        write_log("x%d x%d %d\n", rd, rs1, I_immediate_SE);
+        write_log(machine->logging, "x%d x%d %d\n", rd, rs1, I_immediate_SE);
         break;
       case 3:
-        write_log("x%d %d(x%d)\n", rs2, S_immediate_SE, rs1);
+        write_log(machine->logging, "x%d %d(x%d)\n", rs2, S_immediate_SE, rs1);
+        write_log(machine->logging, "Write to address %x with value %d", (machine->registers[rs1] + (S_immediate_SE)), machine->registers[rs2]);
         break;
       case 4:
-        write_log("x%d x%d %d\n", rs1, rs2, B_immediate_SE);
+        write_log(machine->logging, "x%d x%d %d\n", rs1, rs2, B_immediate_SE);
         break;
       case 5:
-        write_log("x%d %d\n", rd, U_immediate);
+        write_log(machine->logging, "x%d %d\n", rd, U_immediate);
         break;
       case 6:
-        write_log("x%d %d\n", rd, J_immediate_SE);
+        write_log(machine->logging, "x%d %d\n", rd, J_immediate_SE);
         if (rd == 0 && (J_immediate_SE) == 0) { terminate = true; }
         break;
-      default: printf("invalid insttype\n"); write_log(" [%08x]", instruction); terminate = true;
+      case 7:
+        machine->num_insts--;
+        return true;
+        break;
+      default: printf("invalid insttype\n"); write_log(machine->logging, " [%08x]", instruction); terminate = true;
     }
     //printf("Memory: "); for (int i=0; i<7; i++) { printf("Addr%d:%x ",i,machine->RAM[i]); } printf("\n");
-    if (logging) {
-      write_log("Regs:\n"); for (int i=0; i<32; i++) { if (machine->registers[i] != 0) write_log("x%d: 0x%x\n",i,machine->registers[i]); } write_log("\n"); 
+    if (machine->logging) {
+      //write_log(machine->logging, "Regs:\n"); for (int i=0; i<32; i++) { if (machine->registers[i] != 0) write_log(machine->logging, "x%d: 0x%x\n",i,machine->registers[i]); } write_log(machine->logging, "\n");
+      write_log(machine->logging, "Regs changed:\nx%d: 0x%x\n\n", rd, machine->registers[rd]);
     }
+
     if (terminate) {
       printf("Instruction: 0x%08x", instruction);
       printf("PC: 0x%08x", machine->pc);
       riscv_print_trace(machine); exit(1);
     }
   }
+  return false;
 }

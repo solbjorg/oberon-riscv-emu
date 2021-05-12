@@ -101,13 +101,15 @@ static void usage() {
 }
 
 void debug(CPU *riscv) {
-  char choice;
+  char choice; uint32_t addr;
   riscv_print_trace(riscv);
   while (choice != 'r') {
     printf("Options:\n"
            "\ts: step; r: run until next ebreak; l: toggle logging; c: reset count\n"
-           "\tp: print instructions counted; x: print regs\n");
-    scanf(" %c", &choice);
+           "\tp: print instructions counted; x: print regs; m: inspect memory\n"
+           "\tw: give an address in memory to breakpoint upon being written to\n"
+           "\tt: print stack trace\n");
+    choice = getchar();
     switch (choice) {
     case 's': //step
       riscv_execute(riscv, 1);
@@ -117,23 +119,38 @@ void debug(CPU *riscv) {
       printf("Logging: %0d\n", riscv->logging);
       break;
     case 'p': // print count
-      printf("\tInstructions counted since toggle: %d\n", riscv->num_insts);
+      printf("\tInstructions counted since toggle: %lu\n", riscv->num_insts);
       break;
     case 'c': // toggle count
       riscv->num_insts = 0;
       break;
     case 'x': // print regs
       printf("Regs:\n");
-      printf("x%0d: %d, ", 0, riscv->registers[0]);
+        printf("x%2d: 0x%8x, ", 0, riscv->registers[0]);
       for (int i = 1; i < 32; i++) {
-        printf("x%0d: %x, ", i, riscv->registers[i]);
+        printf("x%2d: 0x%8x, ", i, riscv->registers[i]);
         if (i % 4 == 0) printf("\n");
       }
       printf("\n");
       break;
+    case 'm': // inspect memory
+      printf("Enter hexadecimal address to inspect value of: ");
+      scanf("%x", &addr); getchar(); // consume \n
+      printf("MEM[0x%x] = %x", addr, riscv->RAM[addr/4]);
+      break;
+    case 'w': // watch
+      printf("Enter hexadecimal address to watch: ");
+      scanf("%x", &addr); getchar(); // consume \n
+      printf("\n");
+      riscv->watch_mem = addr;
+      break;
+    case 't': // stack trace
+      riscv_print_trace(riscv);
+      break;
     default: // covers 'r'
       break;
     }
+    getchar(); // consume \n
   }
 }
 
@@ -383,6 +400,7 @@ int main(int argc, char *argv[]) {
     bool ebreak = riscv_execute(riscv, CPU_HZ / FPS);
     if (ebreak) {
       debug(riscv);
+
     }
     //risc_run(risc, CPU_HZ / FPS);
 

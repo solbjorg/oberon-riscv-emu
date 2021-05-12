@@ -39,6 +39,7 @@ typedef uint32_t addr_t;
 typedef struct Trace {
   char file[20];
   uint32_t pos;
+  uint32_t pc;
   uint8_t file_pos; // used to index into `file`
 } Trace;
 
@@ -60,7 +61,8 @@ typedef struct CPU {
   uint32_t switches;
 
   uint32_t progress;
-  uint32_t num_insts; // count number of instructions run
+  uint64_t num_insts; // count number of instructions run
+  uint32_t watch_mem; // memory location to "watch"; ie trigger ebreak upon write
   bool     logging;
 
   const struct RISC_LED *leds;

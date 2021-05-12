@@ -141,6 +141,7 @@ void riscv_store_io(CPU *machine, uint32_t address, uint32_t value) {
               trace->file[trace->file_pos+1] = (char)((value & 0x00FF00) >> 8);
               trace->file[trace->file_pos+2] = (char)((value & 0xFF0000) >> 16);
               trace->file_pos += 3;
+              trace->pc = machine->pc;
               break;
             }
             case 0xBB: {
@@ -179,8 +180,8 @@ void riscv_store_io(CPU *machine, uint32_t address, uint32_t value) {
       break;
     }
     default:
-      printf("Wrote %0x to undefined IO at address %0x.", value, address);
-      riscv_print_trace(machine); exit(1);
+      printf("Wrote %0x to undefined IO at address 0x%0x.", value, address);
+      riscv_print_trace(machine); //exit(1);
       break;
   }
 }
@@ -306,7 +307,7 @@ void riscv_reset(CPU *machine) {
 
 void riscv_print_trace(CPU *machine) {
   for (uint16_t i = 0; i < machine->stack_index; i++) {
-    printf("Entering module %s at position %d\n", machine->stack_trace[i].file, machine->stack_trace[i].pos);
+    printf("Calling from module %s at position %d from PC=0x%x\n", machine->stack_trace[i].file, machine->stack_trace[i].pos, machine->stack_trace[i].pc);
   }
   //printf("Mem:\n");
   //for (int i=0; i<machine->mem_size/4; i++) { if (machine->RAM[i] != 0) printf("%x: 0x%x\n",i*4,machine->RAM[i]); } printf("\n"); 

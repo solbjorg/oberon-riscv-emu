@@ -209,7 +209,16 @@ bool riscv_execute(CPU *machine, uint32_t cycles) {
         break;
       case 3:
         write_log(machine->logging, "x%d %d(x%d)\n", rs2, S_immediate_SE, rs1);
-        write_log(machine->logging, "Write to address %x with value %d", (machine->registers[rs1] + (S_immediate_SE)), machine->registers[rs2]);
+        write_log(machine->logging, "Write to address %x with value 0x%x\n", (machine->registers[rs1] + (S_immediate_SE)), machine->registers[rs2]);
+        if (machine->registers[rs1] + (S_immediate_SE) == 0xffffffc4) { // subtract LED write from num_insts
+          machine->num_insts -= 3;
+          if (machine->registers[rs2] > 0xffff) machine->num_insts--; // requires LUI, so remove one additional write
+        }
+
+        if ((S_immediate_SE) + machine->registers[rs1] == machine->watch_mem) {
+          printf("Write to address %x with value 0x%x\n", (S_immediate_SE) + machine->registers[rs1], machine->registers[rs2]);
+          return true; // enter debug mode
+        }
         break;
       case 4:
         write_log(machine->logging, "x%d x%d %d\n", rs1, rs2, B_immediate_SE);

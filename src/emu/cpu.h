@@ -47,6 +47,7 @@ typedef struct Trace {
 typedef struct CPU {
   ureg_t pc;
   ureg_t *registers;
+  word_t CSR[4096];
   word_t ROM[ROMWords];
   word_t *RAM;
 

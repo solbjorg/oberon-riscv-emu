@@ -19,6 +19,8 @@ CPU *riscv_new() {
   machine->registers = malloc(machine->num_regs * sizeof(ureg_t));
   for(int i = 0; i < machine->num_regs; i++)
     machine->registers[i] = 0;
+  for(int i = 0; i < 4096; i++)
+    machine->CSR[i] = 0;
 
   machine->display_start = DefaultDisplayStart;
   machine->fb_width = RISC_FRAMEBUFFER_WIDTH / 32;
@@ -40,13 +42,15 @@ CPU *riscv_new() {
   machine->stack_index = 0;
   machine->num_insts = 0;
   machine->logging = false;
+  machine->watch_mem = 0xffffffff;
   return machine;
 }
 
 #include "cpu.h"
 
 // Emulator from https://github.com/MicroCoreLabs/Projects/blob/master/RISCV_C_Version/C_Version/riscv.c
-// Modifications: fixing LB/U and adding the M extension.
+// Modifications: fixing LB/U and adding the M extension
+//                adding some debug/CSR instructions
 //-------------------------------------------------------------------------
 // Copyright (c) 2020 Ted Fried
 //
@@ -125,8 +129,9 @@ bool riscv_execute(CPU *machine, uint32_t cycles) {
       case 0b1101111:
         insttype = 6; // J
         break;
-      case 0b1110011: //ebreak
+      case 0b1110011: //ebreak/ecall/csr
         insttype = 7;
+        break;
     }
  
     write_log(machine->logging, "PC:0x%x\nINSTRUCTION:\t", machine->pc);
@@ -189,16 +194,24 @@ bool riscv_execute(CPU *machine, uint32_t cycles) {
     if (opcode==0b0110011 && funct3==0b010 && funct7==0b0000000) { if ((int32_t)machine->registers[rs1] < (int32_t)machine->registers[rs2]) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(machine->logging, " SLT "); } else // SLT
     if (opcode==0b0110011 && funct3==0b011 && funct7==0b0000000) { if (machine->registers[rs1] < machine->registers[rs2]) machine->registers[rd]=1; else machine->registers[rd]=0; write_log(machine->logging, " SLTU "); } else // SLTU
     if (opcode==0b0110011 && funct3==0b100 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] ^ machine->registers[rs2]; write_log(machine->logging, " XOR "); } else // XOR
-    if (opcode==0b0110011 && funct3==0b101 && funct7==0b0100000) {machine->registers[rd]=machine->registers[rs1]; shamt=(machine->registers[rs2]&0x1F); temp=machine->registers[rs1]&0x80000000; while (shamt>0) { machine->registers[rd]=(machine->registers[rd]>>1)|temp; shamt--;} write_log(machine->logging, " SRA "); } else // SRA
+    if (opcode==0b0110011 && funct3==0b101 && funct7==0b0100000) { machine->registers[rd] = machine->registers[rs1]; shamt=(machine->registers[rs2]&0x1F); temp=machine->registers[rs1]&0x80000000; while (shamt>0) { machine->registers[rd]=(machine->registers[rd]>>1)|temp; shamt--;} write_log(machine->logging, " SRA "); } else // SRA
     if (opcode==0b0110011 && funct3==0b101 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] >> (machine->registers[rs2]&0x1F); write_log(machine->logging, " SRL "); } else // SRL
     if (opcode==0b0110011 && funct3==0b110 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] | machine->registers[rs2]; write_log(machine->logging, " OR "); } else // OR
     if (opcode==0b0110011 && funct3==0b111 && funct7==0b0000000) { machine->registers[rd] = machine->registers[rs1] & machine->registers[rs2]; write_log(machine->logging, " AND "); } else // AND
-    if (opcode==0b1110011 && funct3==0b000 && (I_immediate_SE)==1) { printf("EBREAK\n"); }
+    if (opcode==0b1110011 && funct3==0b000 && (I_immediate_SE)==0) { printf("ECALL\n"); } else // ECALL, which just gets treated as ebreak at the moment
+    if (opcode==0b1110011 && funct3==0b000 && (I_immediate_SE)==1) { printf("EBREAK\n"); } else // EBREAK
+    if (opcode==0b1110011 && funct3==0b010)                      { machine->registers[rd] = machine->CSR[instruction>>20]; write_log(machine->logging, " CSRRS "); } // CSRRS
     else write_log(machine->logging, " **INVALID** ");
 
     machine->pc = machine->pc + 0x4;
     machine->registers[0]=0;
     machine->num_insts++;
+    if (machine->CSR[0xC00] == UINT_MAX) {
+      machine->CSR[0xC80]++;
+      machine->CSR[0xC00] = 0;
+    } else {
+      machine->CSR[0xC00]++;
+    }
 
     switch (insttype) {
       case 1:
@@ -231,10 +244,14 @@ bool riscv_execute(CPU *machine, uint32_t cycles) {
         if (rd == 0 && (J_immediate_SE) == 0) { terminate = true; }
         break;
       case 7:
-        machine->num_insts--;
-        return true;
+        if (funct3 == 0b000) {
+          machine->num_insts--;
+          return true;
+        } else {
+          write_log(machine->logging, "x%d x%d %d\n", rd, rs1, I_immediate_SE);
+        }
         break;
-      default: printf("invalid insttype\n"); write_log(machine->logging, " [%08x]", instruction); terminate = true;
+      default: printf("invalid insttype\n"); printf(" [%08x]", instruction); terminate = true;
     }
     //printf("Memory: "); for (int i=0; i<7; i++) { printf("Addr%d:%x ",i,machine->RAM[i]); } printf("\n");
     if (machine->logging) {

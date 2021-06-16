@@ -14,6 +14,10 @@
 #define DefaultMemSize      0x00100000
 #define DefaultDisplayStart 0x000E7F00
 
+#define FreeListStart 0x190
+#define HeapOrg 0x174
+#define HeapLim 0x178
+
 #define ROMStart      0xFFFFF800
 #define ROMWords     512
 #define IOStart      0xFFFFFFC0

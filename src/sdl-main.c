@@ -100,6 +100,41 @@ static void usage() {
   exit(1);
 }
 
+void print_free_list(CPU *riscv, word_t list_start) {
+  word_t addr = riscv->RAM[list_start/4];
+  word_t size = riscv->RAM[addr/4];
+  while(addr != 0) {
+    printf("\taddr: 0x%x; size: 0x%x\n", addr, size);
+    addr = riscv->RAM[(addr+8)/4];
+    size = riscv->RAM[addr/4];
+  }
+  printf("\n");
+}
+
+void print_heap(CPU *riscv) {
+  word_t heapLim = riscv->RAM[HeapLim / 4];
+  word_t heap_ptr = riscv->RAM[HeapOrg / 4];
+  printf("Heap starts at 0x%x and ends at 0x%x\n", heap_ptr, heapLim);
+
+  word_t size, mark;
+  size = 1;
+  while(heap_ptr < heapLim && size > 0) {
+    mark = riscv->RAM[(heap_ptr+4) / 4];
+    size = riscv->RAM[heap_ptr / 4];
+    if (mark <= 0x7FFFFFFF) // check sign of mark
+      size = riscv->RAM[size/4];
+    printf("\tPtr: 0x%x; mark: 0x%x; size: 0x%x\n", heap_ptr, mark, size);
+    heap_ptr += size;
+  }
+  if (heap_ptr > heapLim) {
+    printf("\nInvalid heap!");
+  } else {
+    printf("\nValid heap!");
+  }
+  printf(" Heap_ptr is 0x%x after scan!\n", heap_ptr);
+  printf("\n");
+}
+
 void debug(CPU *riscv) {
   char choice; uint32_t addr;
   riscv_print_trace(riscv);
@@ -108,6 +143,7 @@ void debug(CPU *riscv) {
            "\ts: step; r: run until next ebreak; l: toggle logging; c: reset count\n"
            "\tp: print instructions counted; x: print regs; m: inspect memory\n"
            "\tw: give an address in memory to breakpoint upon being written to\n"
+           "\tf: print free lists from heap allocator; h: print heap status\n"
            "\tt: print stack trace\n");
     choice = getchar();
     switch (choice) {
@@ -143,6 +179,15 @@ void debug(CPU *riscv) {
       scanf("%x", &addr); getchar(); // consume \n
       printf("\n");
       riscv->watch_mem = addr;
+      break;
+    case 'f': // free-list print
+      printf("List0:\n"); print_free_list(riscv, FreeListStart);
+      printf("List1:\n"); print_free_list(riscv, FreeListStart+4);
+      printf("List2:\n"); print_free_list(riscv, FreeListStart+8);
+      printf("List3:\n"); print_free_list(riscv, FreeListStart+12);
+      break;
+    case 'h': // scan heap
+      print_heap(riscv);
       break;
     case 't': // stack trace
       riscv_print_trace(riscv);
